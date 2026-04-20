@@ -1,0 +1,3 @@
+[workspace]
+members = ["qv-core", "qv-cli", "qv-ffi", "qv-wasm"]
+resolver = "2"

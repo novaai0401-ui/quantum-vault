@@ -1,0 +1,73 @@
+# Render blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys two services from a single push:
+#   1. qv-docs   → static site (Vite + tekivex-ui build).
+#   2. qv-server → Node web service running the sovereign REST API.
+#
+# First-time setup:
+#   1. Fork / push this repo to GitHub.
+#   2. In Render, click "New → Blueprint" and point at the repo.
+#   3. Render reads this file and creates both services.
+#   4. Set `QV_MASTER_KEY_HEX` on the web service (64 hex chars, kept secret).
+#   5. Once the web service is live, set `VITE_QV_API` on the docs site to
+#      its public URL and redeploy the static site (or just append
+#      `?api=<server-url>` when visiting the Demo page).
+
+services:
+  # ───────────────────────────────────────────────────────────────────────
+  # 1. Docs / marketing site (static)
+  # ───────────────────────────────────────────────────────────────────────
+  - type: web
+    name: qv-docs
+    runtime: static
+    plan: free
+    rootDir: qv-docs
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # Single-page app fallback so /quickstart, /languages, etc. resolve
+    # to index.html (React Router handles them client-side).
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+    envVars:
+      # Public API URL the demo page will talk to. Override to the
+      # qv-server URL after its first deploy.
+      - key: VITE_QV_API
+        value: ""     # filled in after qv-server is live
+
+  # ───────────────────────────────────────────────────────────────────────
+  # 2. Sovereign REST server (Node web service)
+  # ───────────────────────────────────────────────────────────────────────
+  - type: web
+    name: qv-server
+    runtime: node
+    plan: free
+    rootDir: qv-server
+    # Zero npm deps — no `npm install` needed. Node 20+ ships with every
+    # module the server uses (http, crypto, fs, worker_threads, zlib, os).
+    buildCommand: "echo 'zero-npm-build'"
+    startCommand: node server-sovereign.mjs
+    healthCheckPath: /v3/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: QV_HOST
+        value: "0.0.0.0"
+      - key: QV_DATA_DIR
+        value: "/tmp/qv-data"   # ephemeral on free plan; use a disk on paid
+      - key: QV_WORKERS
+        value: "2"              # free-plan CPU count
+      - key: QV_CORS_ORIGIN
+        value: "*"              # tighten to the qv-docs origin in production
+      - key: QV_MASTER_KEY_HEX
+        sync: false             # set manually in the Render dashboard
+    # Paid plan only: uncomment to get a persistent disk for the keystore.
+    # disk:
+    #   name: qv-data
+    #   mountPath: /var/lib/qv-data
+    #   sizeGB: 1

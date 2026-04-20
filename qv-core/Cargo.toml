@@ -1,0 +1,28 @@
+[package]
+name = "qv-core"
+version = "3.0.0"
+edition = "2021"
+description = "QuantumVault core cryptographic token library"
+license = "Apache-2.0"
+
+[dependencies]
+ml-dsa = { version = "0.1.0-rc.8", features = ["alloc", "rand_core", "zeroize"] }
+ml-kem = { version = "0.3.0-rc.2", features = ["getrandom", "zeroize"] }
+chacha20poly1305 = "0.10"
+sha3 = "0.10"
+rand = { version = "0.8", features = ["getrandom"] }
+thiserror = "1"
+zeroize = { version = "1", features = ["derive"] }
+
+# v4.1: Falcon signatures via PQClean (pure C, wrapped in pqcrypto-falcon).
+# Feature-gated so targets without a C toolchain (e.g. wasm32-unknown-unknown)
+# can still build ML-DSA-only. Enable with `--features falcon`.
+pqcrypto-falcon = { version = "0.4", default-features = false, features = ["std"], optional = true }
+pqcrypto-traits = { version = "0.3", optional = true }
+
+[features]
+default = ["falcon"]
+falcon  = ["dep:pqcrypto-falcon", "dep:pqcrypto-traits"]
+
+[dev-dependencies]
+hex = "0.4"

@@ -1,0 +1,14 @@
+{
+  "name":        "qv-server",
+  "version":     "4.0.0-alpha",
+  "description": "QuantumVault Sovereign REST API — zero npm dependencies",
+  "type":        "module",
+  "main":        "server-sovereign.mjs",
+  "scripts": {
+    "start":        "node server-sovereign.mjs",
+    "start:legacy": "node server.mjs"
+  },
+  "dependencies": {},
+  "engines": { "node": ">=18.0.0" },
+  "license": "ISC"
+}

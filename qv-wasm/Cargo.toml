@@ -1,0 +1,35 @@
+[package]
+name    = "qv-wasm"
+version = "0.1.0"
+edition = "2021"
+
+# Sovereign WASM build of QuantumVault.
+# Build:
+#   rustup target add wasm32-unknown-unknown
+#   cargo build -p qv-wasm --release --target wasm32-unknown-unknown
+# Output:
+#   target/wasm32-unknown-unknown/release/qv_wasm.wasm
+#
+# Hosts: browser, Deno, Bun, Cloudflare Workers, Node, Python (wasmtime),
+#        Go (wazero), .NET (Wasmtime.NET), anywhere WASI runs.
+
+[lib]
+name       = "qv_wasm"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Falcon uses PQClean C code — disabled for wasm32-unknown-unknown (no C
+# toolchain available by default). ML-DSA-87 stays.
+qv-core = { path = "../qv-core", default-features = false }
+
+# Custom getrandom shim. On wasm32-unknown-unknown the transitive `getrandom`
+# dep (via ml-kem / rand) has no native entropy source. The `custom` feature
+# + `register_custom_getrandom!` lets us forward to a host import. The host
+# must provide `qv_host_random(ptr, len) -> i32` (0 = ok, non-zero = err).
+getrandom = { version = "0.2", features = ["custom"] }
+
+[profile.release]
+opt-level = "z"   # smallest binary
+lto       = true
+strip     = true
+panic     = "abort"

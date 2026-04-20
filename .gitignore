@@ -1,0 +1,50 @@
+# ── Rust ────────────────────────────────────────────────────────────────────
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# ── Node / docs site ────────────────────────────────────────────────────────
+node_modules
+dist
+.vite
+.parcel-cache
+*.log
+
+# ── Server runtime state (never commit keys!) ───────────────────────────────
+qv-server/qv-data
+qv-server/qv-data-test
+qv-server/qv-data-test2
+qv-server/qv-data-**/
+/tmp/qv-data
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# ── One-off artefacts left behind during dev ────────────────────────────────
+/test_stderr.txt
+/test_stdout.txt
+/test2_stderr.txt
+/test2_stdout.txt
+/build_stderr.txt
+/build_stdout.txt
+/generate_ai_immune.py
+/generate_product_plan.py
+/generate_v2_whitepaper.py
+
+# ── Python / misc ───────────────────────────────────────────────────────────
+__pycache__
+*.pyc
+.venv
+venv
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+*.pem
+*.key
+.env
+.env.*
+!.env.example

@@ -1,0 +1,30 @@
+[package]
+name    = "qv-ffi"
+version = "0.1.0"
+edition = "2021"
+
+# Sovereign C ABI for QuantumVault.
+# Build:  cargo build -p qv-ffi --release
+# Output: target/release/qv.dll  (Windows)
+#         target/release/libqv.so (Linux)
+#         target/release/libqv.dylib (macOS)
+#
+# Any language with FFI can now call QuantumVault without HTTP:
+#   Python:  ctypes.CDLL("qv.dll")
+#   Go:      cgo
+#   Ruby:    FFI
+#   .NET:    [DllImport("qv.dll")]
+#   Java:    JNA Native.load("qv")
+#   Swift:   direct import
+#   C/C++:   #include "qv.h" + -lqv
+
+[lib]
+name       = "qv"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+qv-core = { path = "../qv-core", default-features = false }
+
+[features]
+default = ["falcon"]
+falcon  = ["qv-core/falcon"]

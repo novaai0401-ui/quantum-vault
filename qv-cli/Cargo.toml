@@ -1,0 +1,18 @@
+[package]
+name = "qv-cli"
+version = "3.0.0"
+edition = "2021"
+description = "QuantumVault command-line interface"
+license = "Apache-2.0"
+
+[[bin]]
+name = "qv"
+path = "src/main.rs"
+
+[dependencies]
+qv-core = { path = "../qv-core" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+anyhow = "1"
+rand = { version = "0.8", features = ["getrandom"] }

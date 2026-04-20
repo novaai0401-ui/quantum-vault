@@ -1,0 +1,17 @@
+[target.x86_64-pc-windows-gnu]
+linker = "C:\\Users\\chand\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\gcc.exe"
+ar = "C:\\Users\\chand\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\\mingw64\\bin\\ar.exe"
+
+# v4.1: unblock wasm32-unknown-unknown by telling getrandom 0.3/0.4 to use
+# the `custom` backend (qv-wasm provides `__getrandom_v03_custom`).
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="custom"']
+
+# ── v4.0 Sovereignty: use vendored crate sources from ./vendor ──────────────
+# TEMPORARILY DISABLED during Falcon integration (v4.1). Re-enable after
+# `cargo vendor vendor` has pulled pqcrypto-falcon and its deps in-tree.
+# [source.crates-io]
+# replace-with = "vendored-sources"
+#
+# [source.vendored-sources]
+# directory = "vendor"
