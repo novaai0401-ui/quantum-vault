@@ -55,3 +55,6 @@ venv
 !vendor/**/*.pem
 !vendor/**/*.key
 !vendor/**/*.der
+!vendor/**/*.pyc
+!vendor/**/__pycache__/
+!vendor/**/__pycache__/**
