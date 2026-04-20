@@ -1,0 +1,48 @@
+# CODEOWNERS for QuantumVault
+#
+# Order matters — the LAST matching pattern wins. Put broad patterns
+# first, narrow overrides last.
+#
+# Everyone listed here is automatically requested for review on PRs
+# touching the matched paths. See:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
+
+# ── Default owner (everything not otherwise matched) ──────────────────
+*                                   @007krcs
+
+# ── Cryptographic core ────────────────────────────────────────────────
+# Any change here must be reviewed carefully — suite dispatch,
+# MutationChain, AEAD ordering, Falcon bindings, entropy certification.
+/qv-core/                           @007krcs
+/qv-core/src/crypto/                @007krcs
+/qv-core/src/issuance.rs            @007krcs
+/qv-core/src/verify.rs              @007krcs
+/qv-core/src/mutation.rs            @007krcs
+/qv-core/src/falcon/                @007krcs
+
+# ── FFI surface (C ABI — breaking changes fan out to 5 platforms) ─────
+/qv-ffi/                            @007krcs
+/qv-ffi/include/qv.h                @007krcs
+
+# ── Server (HTTP contract — versioned as /v3/*) ───────────────────────
+/qv-server/                         @007krcs
+/qv-server/server-sovereign.mjs     @007krcs
+/qv-server/Dockerfile               @007krcs
+
+# ── WASM bindings + JS SDK ────────────────────────────────────────────
+/qv-wasm/                           @007krcs
+/qv-sdk/                            @007krcs
+
+# ── Python client ─────────────────────────────────────────────────────
+/qv-python/                         @007krcs
+
+# ── Release pipeline + governance docs ────────────────────────────────
+/.github/workflows/                 @007krcs
+/.github/CODEOWNERS                 @007krcs
+/ROADMAP.md                         @007krcs
+/SECURITY.md                        @007krcs
+/CHANGELOG.md                       @007krcs
+
+# ── Vendored dependencies (do not edit manually) ──────────────────────
+# Changes here must come from `cargo vendor` regeneration only.
+/vendor/                            @007krcs
