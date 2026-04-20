@@ -1,6 +1,7 @@
 import { Routes, Route, NavLink, Link } from 'react-router-dom';
 import Landing      from './pages/Landing';
 import Quickstart   from './pages/Quickstart';
+import Concepts     from './pages/Concepts';
 import Languages    from './pages/Languages';
 import ApiRef       from './pages/ApiRef';
 import Architecture from './pages/Architecture';
@@ -16,6 +17,7 @@ function Nav() {
           QuantumVault<span className="dot">.</span>
         </Link>
         <NavLink to="/quickstart"   className={link}>Quickstart</NavLink>
+        <NavLink to="/concepts"     className={link}>Concepts</NavLink>
         <NavLink to="/languages"    className={link}>Languages</NavLink>
         <NavLink to="/api"          className={link}>REST&nbsp;API</NavLink>
         <NavLink to="/architecture" className={link}>Architecture</NavLink>
@@ -42,6 +44,7 @@ export default function App() {
         <Routes>
           <Route path="/"             element={<Landing />} />
           <Route path="/quickstart"   element={<Quickstart />} />
+          <Route path="/concepts"     element={<Concepts />} />
           <Route path="/languages"    element={<Languages />} />
           <Route path="/api"          element={<ApiRef />} />
           <Route path="/architecture" element={<Architecture />} />
@@ -50,7 +53,7 @@ export default function App() {
         </Routes>
       </main>
       <footer className="qv-footer">
-        Apache-2.0 · v4.1-γ · Built with Rust + Node stdlib ·{' '}
+        Apache-2.0 · v4.2.0 · Built with Rust + Node stdlib ·{' '}
         <a href="https://github.com/007krcs/quantum-vault">source</a>
       </footer>
     </div>
