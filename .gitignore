@@ -48,3 +48,10 @@ venv
 .env
 .env.*
 !.env.example
+
+# Vendored upstream crates include test-fixture .pem/.key files (e.g.
+# pkcs8/tests/examples/*.pem). They're public PQClean/RustCrypto test
+# vectors, not our secrets, and cargo's checksum manifest requires them.
+!vendor/**/*.pem
+!vendor/**/*.key
+!vendor/**/*.der
