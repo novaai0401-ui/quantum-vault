@@ -21,6 +21,9 @@ npm install @quantumvault/sdk
 # Browsers / edge — 127 KB wasm
 npm install @quantumvault/wasm
 
+# Python (REST client, zero deps)
+pip install quantumvault
+
 # Rust
 cargo add qv-core --features falcon
 

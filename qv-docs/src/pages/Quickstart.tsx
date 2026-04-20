@@ -16,6 +16,7 @@ export default function Quickstart() {
         <TkxTabList>
           <TkxTab>JavaScript / Node</TkxTab>
           <TkxTab>Browser / Workers</TkxTab>
+          <TkxTab>Python</TkxTab>
           <TkxTab>Rust</TkxTab>
           <TkxTab>REST (Docker)</TkxTab>
           <TkxTab>C / Go / C# / Swift</TkxTab>
@@ -36,6 +37,16 @@ export default function Quickstart() {
             127 KB <code>.wasm</code> + a tiny portable loader. Works in
             browsers, Workers, Deno, and Node. Auto-wires one host import
             (<code>qv_host_random</code>) to the platform's CSPRNG.
+          </p>
+        </TkxTabPanel>
+
+        <TkxTabPanel>
+          <pre><code>{`pip install quantumvault`}</code></pre>
+          <p>
+            Pure-Python REST client, stdlib-only (no <code>requests</code>, no
+            compiled wheels). One universal wheel works on Python 3.8+ across
+            Linux, macOS, Windows, WASM, Alpine. Talks to any <code>qv-server</code>
+            instance — run the Docker image locally or point at your vault.
           </p>
         </TkxTabPanel>
 
