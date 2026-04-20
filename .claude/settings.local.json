@@ -102,7 +102,8 @@
       "Bash(java -version)",
       "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'v4.2: Falcon-512/1024 dispatch in issue_token / verify_token *)",
       "Bash(git push *)",
-      "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'v4.2 distribution scaffold: npm + crates.io + GHCR + GitHub Releases *)"
+      "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'v4.2 distribution scaffold: npm + crates.io + GHCR + GitHub Releases *)",
+      "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'docs: escape ${PROJECT_ROOT} in Go cgo snippet *)"
     ]
   }
 }

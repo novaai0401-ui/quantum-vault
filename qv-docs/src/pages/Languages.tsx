@@ -170,7 +170,7 @@ function GoPanel() {
       <P>{`package main
 
 /*
-#cgo LDFLAGS: -L${PROJECT_ROOT}/target/release -lqv
+#cgo LDFLAGS: -L\${PROJECT_ROOT}/target/release -lqv
 #include "qv.h"
 */
 import "C"
