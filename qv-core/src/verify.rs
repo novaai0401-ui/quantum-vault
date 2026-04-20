@@ -71,6 +71,7 @@ pub fn verify_token(
 
 /// Run the shared non-signature layers (entropy / temporal / decrypt / chain / claims).
 /// Used by the Falcon verify helpers below so layers 2/3/5/6/7 are not copy-pasted.
+#[cfg_attr(not(feature = "falcon"), allow(dead_code))]
 fn verify_non_sig_layers(
     raw: &QVRawToken,
     encrypt_key: &[u8; 32],
