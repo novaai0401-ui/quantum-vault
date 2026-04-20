@@ -1,0 +1,54 @@
+# Line-ending rules for QuantumVault.
+#
+# Rationale: Rust's `cargo vendor` writes a JSON checksum for every
+# vendored file. If git converts LF → CRLF on commit (Windows default
+# with core.autocrlf=true), Linux CI fails with:
+#   error: the listed checksum of `vendor/...` has changed
+# because the actual SHA of the checked-out file no longer matches the
+# `.cargo-checksum.json` entry cargo recorded.
+#
+# Rules:
+#   1. Default — git auto-detects text vs binary, writes LF in the repo,
+#      leaves the working copy alone (controlled by core.autocrlf).
+#   2. Everything under vendor/ is treated as binary (-text). Git will
+#      copy bytes verbatim on checkout, bypassing any autocrlf policy.
+#      This is correct because vendored code is a tarball we don't edit.
+#   3. Source files we DO edit get an explicit eol=lf so Windows
+#      contributors don't accidentally reintroduce the same bug.
+
+* text=auto eol=lf
+
+# Explicit LF for code we edit (Windows-proof).
+*.rs        text eol=lf
+*.toml      text eol=lf
+*.mjs       text eol=lf
+*.js        text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+LICENSE     text eol=lf
+
+# Explicit binaries (don't let autodetection get cute).
+*.wasm      binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.dll       binary
+*.so        binary
+*.dylib     binary
+
+# Vendored Rust sources — treat as binary so git never rewrites bytes.
+# `.cargo-checksum.json` is computed against the exact bytes cargo wrote
+# when vendoring (which may be CRLF, LF, or mixed depending on upstream
+# .crate tarballs). Any line-ending conversion breaks the checksum on
+# any platform whose default differs from the author's.
+# NOTE: this rule must come LAST so it overrides the generic `*.rs` etc.
+vendor/** -text
