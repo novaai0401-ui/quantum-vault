@@ -21,50 +21,90 @@ pub struct IssueParams<'a> {
     pub chain:        &'a mut MutationChain,
 }
 
-/// Issue a new QuantumVault token.
+/// Issue a new QuantumVault token (ML-DSA-87 default path).
 pub fn issue_token(p: IssueParams<'_>) -> QVResult<QVRawToken> {
-    // 1. Timestamp (microseconds). Use std::time — no external dep needed.
+    let (shell, msg) = prepare_unsigned(
+        p.suite, p.token_type, p.ttl_secs, p.device_fp,
+        p.claims, p.encrypt_key, p.chain,
+    )?;
+    let signature = sign(p.signing_key, &msg)?;
+    Ok(QVRawToken { header: shell.header, encrypted_payload: shell.encrypted_payload, signature })
+}
+
+/// Shared pre-sign pipeline: timestamp, nonce, entropy, chain advance,
+/// encrypt payload, build header, compute the byte-range the signature
+/// must cover. Suite-specific signing plugs in on top.
+pub fn prepare_unsigned(
+    suite: crate::crypto::SuiteId,
+    token_type: TokenType,
+    ttl_secs: u32,
+    device_fp_opt: Option<[u8; 32]>,
+    claims: &crate::claims::Claims,
+    encrypt_key: &[u8; 32],
+    chain: &mut MutationChain,
+) -> QVResult<(QVRawToken, Vec<u8>)> {
     let issued_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| QVError::SerializationError(e.to_string()))?
         .as_micros() as u64;
 
-    // 2. CSPRNG nonce (32 bytes).
     let mut nonce = [0u8; 32];
     OsRng.fill_bytes(&mut nonce);
-
-    // 3. KOLMOGOROV entropy check on the nonce.
     certify_entropy(&nonce)?;
 
-    // 4. Device fingerprint — default to SHA3-256 of nonce if not provided.
-    let device_fp = p.device_fp.unwrap_or_else(|| sha3_256(&nonce));
+    let device_fp = device_fp_opt.unwrap_or_else(|| sha3_256(&nonce));
 
-    // 5. Advance mutation chain.
-    let _ = p.chain.advance();
-    let mutation_ctr = p.chain.current_counter();
+    let _ = chain.advance();
+    let mutation_ctr = chain.current_counter();
 
-    // 6. Encode and encrypt payload (XChaCha20-Poly1305).
-    let plaintext = p.claims.encode()?;
-    let encrypted_payload = encrypt_payload(&plaintext, p.encrypt_key, &nonce)?;
+    let plaintext = claims.encode()?;
+    let encrypted_payload = encrypt_payload(&plaintext, encrypt_key, &nonce)?;
 
-    // 7. Assemble header.
     let header = QVTokenHeader {
-        suite: p.suite,
-        token_type: p.token_type,
-        issued_at,
-        ttl: p.ttl_secs,
-        nonce,
-        device_fp,
-        mutation_ctr,
+        suite, token_type, issued_at, ttl: ttl_secs,
+        nonce, device_fp, mutation_ctr,
     };
 
-    // 8. Build token shell to obtain signed bytes.
     let shell = QVRawToken { header, encrypted_payload, signature: Vec::new() };
     let msg = shell.signed_bytes();
+    Ok((shell, msg))
+}
 
-    // 9. ML-DSA-87 signature over all bytes except the signature field itself.
-    let signature = sign(p.signing_key, &msg)?;
+/// Issue a Falcon-512 token (suite 0x10).
+#[cfg(feature = "falcon")]
+pub fn issue_token_falcon512(
+    token_type: TokenType,
+    ttl_secs: u32,
+    device_fp: Option<[u8; 32]>,
+    claims: &crate::claims::Claims,
+    signing_key: &crate::falcon::falcon512::QVFalcon512SigningKey,
+    encrypt_key: &[u8; 32],
+    chain: &mut MutationChain,
+) -> QVResult<QVRawToken> {
+    let (shell, msg) = prepare_unsigned(
+        crate::crypto::SuiteId::Falcon512, token_type, ttl_secs,
+        device_fp, claims, encrypt_key, chain,
+    )?;
+    let signature = crate::falcon::falcon512::sign(signing_key, &msg)?;
+    Ok(QVRawToken { header: shell.header, encrypted_payload: shell.encrypted_payload, signature })
+}
 
+/// Issue a Falcon-1024 token (suite 0x11).
+#[cfg(feature = "falcon")]
+pub fn issue_token_falcon1024(
+    token_type: TokenType,
+    ttl_secs: u32,
+    device_fp: Option<[u8; 32]>,
+    claims: &crate::claims::Claims,
+    signing_key: &crate::falcon::falcon1024::QVFalcon1024SigningKey,
+    encrypt_key: &[u8; 32],
+    chain: &mut MutationChain,
+) -> QVResult<QVRawToken> {
+    let (shell, msg) = prepare_unsigned(
+        crate::crypto::SuiteId::Falcon1024, token_type, ttl_secs,
+        device_fp, claims, encrypt_key, chain,
+    )?;
+    let signature = crate::falcon::falcon1024::sign(signing_key, &msg)?;
     Ok(QVRawToken { header: shell.header, encrypted_payload: shell.encrypted_payload, signature })
 }
 

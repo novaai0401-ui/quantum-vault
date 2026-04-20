@@ -66,3 +66,68 @@ pub fn verify_token(
         mutation_ctr: raw.header.mutation_ctr,
     })
 }
+
+// ─── Falcon verify paths (suite-dispatched in v4.2) ─────────────────────────
+
+/// Run the shared non-signature layers (entropy / temporal / decrypt / chain / claims).
+/// Used by the Falcon verify helpers below so layers 2/3/5/6/7 are not copy-pasted.
+fn verify_non_sig_layers(
+    raw: &QVRawToken,
+    encrypt_key: &[u8; 32],
+    chain: &MutationChain,
+) -> QVResult<VerifyOutput> {
+    certify_entropy(&raw.header.nonce)?;
+
+    let now_us = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| QVError::SerializationError(e.to_string()))?
+        .as_micros() as u64;
+    if raw.header.issued_at > now_us + 5_000_000 {
+        return Err(QVError::NotYetValid);
+    }
+    let expiry_us = raw.header.issued_at + (raw.header.ttl as u64) * 1_000_000;
+    if now_us > expiry_us {
+        return Err(QVError::Expired { issued_at: raw.header.issued_at, ttl: raw.header.ttl });
+    }
+
+    let plaintext = decrypt_payload(&raw.encrypted_payload, encrypt_key, &raw.header.nonce)?;
+    chain.check_token_counter(raw.header.mutation_ctr)?;
+    let claims = Claims::decode(&plaintext)?;
+
+    Ok(VerifyOutput {
+        claims,
+        issued_at: raw.header.issued_at,
+        ttl: raw.header.ttl,
+        mutation_ctr: raw.header.mutation_ctr,
+    })
+}
+
+#[cfg(feature = "falcon")]
+pub fn verify_token_falcon512(
+    raw: &QVRawToken,
+    vk: &crate::falcon::falcon512::QVFalcon512VerifyingKey,
+    encrypt_key: &[u8; 32],
+    chain: &MutationChain,
+) -> QVResult<VerifyOutput> {
+    if raw.header.suite != crate::crypto::SuiteId::Falcon512 {
+        return Err(QVError::UnknownSuite(raw.header.suite.as_byte()));
+    }
+    let msg = raw.signed_bytes();
+    crate::falcon::falcon512::verify(vk, &msg, &raw.signature)?;
+    verify_non_sig_layers(raw, encrypt_key, chain)
+}
+
+#[cfg(feature = "falcon")]
+pub fn verify_token_falcon1024(
+    raw: &QVRawToken,
+    vk: &crate::falcon::falcon1024::QVFalcon1024VerifyingKey,
+    encrypt_key: &[u8; 32],
+    chain: &MutationChain,
+) -> QVResult<VerifyOutput> {
+    if raw.header.suite != crate::crypto::SuiteId::Falcon1024 {
+        return Err(QVError::UnknownSuite(raw.header.suite.as_byte()));
+    }
+    let msg = raw.signed_bytes();
+    crate::falcon::falcon1024::verify(vk, &msg, &raw.signature)?;
+    verify_non_sig_layers(raw, encrypt_key, chain)
+}

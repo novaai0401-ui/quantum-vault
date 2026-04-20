@@ -7,11 +7,11 @@ ar = "C:\\Users\\chand\\AppData\\Local\\Microsoft\\WinGet\\Packages\\BrechtSande
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg', 'getrandom_backend="custom"']
 
-# ── v4.0 Sovereignty: use vendored crate sources from ./vendor ──────────────
-# TEMPORARILY DISABLED during Falcon integration (v4.1). Re-enable after
-# `cargo vendor vendor` has pulled pqcrypto-falcon and its deps in-tree.
-# [source.crates-io]
-# replace-with = "vendored-sources"
-#
-# [source.vendored-sources]
-# directory = "vendor"
+# ── v4.2 Sovereignty: use vendored crate sources from ./vendor ──────────────
+# Re-enabled after `cargo vendor vendor` pulled pqcrypto-falcon and all its
+# transitive deps in-tree. Builds are now offline / air-gap clean.
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
