@@ -58,3 +58,4 @@ venv
 !vendor/**/*.pyc
 !vendor/**/__pycache__/
 !vendor/**/__pycache__/**
+.claude/
