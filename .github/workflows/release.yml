@@ -1,0 +1,335 @@
+# QuantumVault release pipeline
+# =============================
+# Triggers on pushing a tag like `v4.2.0`. Fans out to:
+#   1. npm         → @quantumvault/sdk          (qv-sdk/)
+#   2. npm         → @quantumvault/wasm          (qv-wasm/pkg/ + built .wasm)
+#   3. crates.io   → qv-core                     (qv-core/)
+#   4. GitHub Releases — prebuilt FFI binaries for 5 platforms:
+#        linux x86_64 / linux aarch64 / macOS x86_64 / macOS arm64 / windows x86_64
+#   5. GHCR        → ghcr.io/<owner>/qv-server   (qv-server/Dockerfile)
+#
+# Required repository secrets (already set by the maintainer):
+#   NPM_TOKEN             — npm automation token with publish access to @quantumvault
+#   CARGO_REGISTRY_TOKEN  — crates.io token with publish-new + publish-update
+#   PYPI_API_TOKEN        — reserved for v4.3 Python wheels (unused in v4.2)
+#   GITHUB_TOKEN          — auto-provided, used for GHCR + Releases
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build everything but skip publish steps'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: write        # create GitHub Releases + upload assets
+  packages: write        # push to GHCR
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: '-D warnings'
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  # 0. Sanity — run qv-core tests on Linux before publishing anywhere.
+  # ────────────────────────────────────────────────────────────────────────
+  test:
+    name: test qv-core (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test -p qv-core --features falcon
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 1. Publish @quantumvault/sdk to npm
+  # ────────────────────────────────────────────────────────────────────────
+  npm-sdk:
+    name: npm — @quantumvault/sdk
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify version matches tag
+        working-directory: qv-sdk
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::qv-sdk/package.json version ($PKG_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Publish
+        if: github.event_name == 'push' || inputs.dry_run == 'false'
+        working-directory: qv-sdk
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 2. Build qv-wasm → publish @quantumvault/wasm to npm
+  # ────────────────────────────────────────────────────────────────────────
+  npm-wasm:
+    name: npm — @quantumvault/wasm
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Build wasm (ML-DSA-only, no falcon)
+        run: |
+          cargo build -p qv-wasm --release --target wasm32-unknown-unknown
+
+      - name: Stage publish directory
+        run: |
+          cp target/wasm32-unknown-unknown/release/qv_wasm.wasm qv-wasm/pkg/
+          cp LICENSE qv-wasm/pkg/LICENSE
+          ls -lh qv-wasm/pkg/
+
+      - name: Verify version matches tag
+        working-directory: qv-wasm/pkg
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::qv-wasm/pkg/package.json version ($PKG_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Publish
+        if: github.event_name == 'push' || inputs.dry_run == 'false'
+        working-directory: qv-wasm/pkg
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 3. Publish qv-core to crates.io
+  # ────────────────────────────────────────────────────────────────────────
+  crates-io:
+    name: crates.io — qv-core
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Dry-run package
+        working-directory: qv-core
+        run: cargo package --no-verify
+
+      - name: Publish
+        if: github.event_name == 'push' || inputs.dry_run == 'false'
+        working-directory: qv-core
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 4. Prebuilt FFI binaries for 5 platforms → GitHub Release
+  # ────────────────────────────────────────────────────────────────────────
+  ffi-binaries:
+    name: ffi — ${{ matrix.target }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: so
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: so
+            archive: tar.gz
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            ext: dylib
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            ext: dylib
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            ext: dll
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install aarch64 linker (aarch64-linux only)
+        if: matrix.cross == true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          mkdir -p .cargo
+          cat >> .cargo/config.toml <<'EOF'
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: Build qv-ffi (release)
+        run: cargo build -p qv-ffi --release --target ${{ matrix.target }} --features falcon
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          mkdir -p out
+          case "${{ matrix.ext }}" in
+            so|dylib) cp "target/${{ matrix.target }}/release/libqv.${{ matrix.ext }}" out/ ;;
+            dll)      cp "target/${{ matrix.target }}/release/qv.dll"                   out/ ;;
+          esac
+          cp qv-ffi/include/qv.h out/
+          cp LICENSE out/LICENSE
+          cp README.md out/README.md
+
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          tar -czf "libqv-${{ matrix.target }}.tar.gz" -C out .
+
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path out/* -DestinationPath "libqv-${{ matrix.target }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libqv-${{ matrix.target }}
+          path: libqv-${{ matrix.target }}.*
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 5. Create GitHub Release and attach all artifacts.
+  # ────────────────────────────────────────────────────────────────────────
+  github-release:
+    name: github — release ${{ github.ref_name }}
+    needs: ffi-binaries
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all ffi artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: libqv-*
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: QuantumVault ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/libqv-*.tar.gz
+            dist/libqv-*.zip
+          body: |
+            QuantumVault **${{ github.ref_name }}** — post-quantum cryptographic tokens
+            (ML-DSA-87, Falcon-512/1024) distributed through five channels.
+
+            ### Install
+
+            ```bash
+            # JavaScript / TypeScript
+            npm install @quantumvault/sdk
+
+            # Browsers / Workers / Deno
+            npm install @quantumvault/wasm
+
+            # Rust
+            cargo add qv-core --features falcon
+
+            # Server (Docker)
+            docker pull ghcr.io/${{ github.repository_owner }}/qv-server:${{ github.ref_name }}
+            ```
+
+            ### Native FFI (C / Go / C# / Swift / Java)
+
+            Download the tarball / zip for your platform below. Each archive
+            contains `libqv.{so,dylib}` or `qv.dll`, the `qv.h` header,
+            `LICENSE`, and `README.md`.
+
+  # ────────────────────────────────────────────────────────────────────────
+  # 6. Build & push qv-server to GHCR.
+  # ────────────────────────────────────────────────────────────────────────
+  docker-ghcr:
+    name: ghcr — qv-server
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/qv-server
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: qv-server
+          file: qv-server/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,0 +1,4 @@
+qv-data
+qv-data-*
+*.log
+node_modules

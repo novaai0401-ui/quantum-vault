@@ -100,7 +100,9 @@
       "Bash(git -c user.email=\"qv@local\" -c user.name=\"QuantumVault\" commit -m \"QuantumVault v4.1-γ — Falcon + worker pool + WASM + docs site + Render blueprint\")",
       "Bash(gh repo *)",
       "Bash(java -version)",
-      "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'v4.2: Falcon-512/1024 dispatch in issue_token / verify_token *)"
+      "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'v4.2: Falcon-512/1024 dispatch in issue_token / verify_token *)",
+      "Bash(git push *)",
+      "Bash(git -c user.email=qv@local -c user.name=QuantumVault commit -m 'v4.2 distribution scaffold: npm + crates.io + GHCR + GitHub Releases *)"
     ]
   }
 }

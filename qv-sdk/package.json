@@ -1,18 +1,60 @@
 {
-  "name": "qv-sdk",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "@quantumvault/sdk",
+  "version": "4.2.0",
+  "description": "QuantumVault post-quantum token SDK — ML-DSA-87 (Dilithium-5) + XChaCha20-Poly1305 + SHA3-256. Works in Node, Deno, Bun, Cloudflare Workers, and modern browsers.",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "module": "./src/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./src/index.mjs",
+      "default": "./src/index.mjs"
+    }
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "post-quantum",
+    "cryptography",
+    "ml-dsa",
+    "dilithium",
+    "falcon",
+    "pqc",
+    "tokens",
+    "jwt-alternative",
+    "xchacha20",
+    "sha3",
+    "nist-fips-204",
+    "quantum-safe"
+  ],
+  "author": "QuantumVault contributors",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/007krcs/quantum-vault#readme",
+  "bugs": {
+    "url": "https://github.com/007krcs/quantum-vault/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/007krcs/quantum-vault.git",
+    "directory": "qv-sdk"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "demo": "node demo.mjs",
+    "test": "node demo.mjs"
+  },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@noble/post-quantum": "^0.6.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

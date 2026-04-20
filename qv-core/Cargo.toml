@@ -1,9 +1,23 @@
 [package]
-name = "qv-core"
-version = "3.0.0"
-edition = "2021"
-description = "QuantumVault core cryptographic token library"
-license = "Apache-2.0"
+name        = "qv-core"
+version     = "4.2.0"
+edition     = "2021"
+rust-version = "1.75"
+description = "QuantumVault — post-quantum cryptographic tokens (ML-DSA-87 + Falcon-512/1024, XChaCha20-Poly1305, SHA3-256, mutation-chain replay protection)."
+authors     = ["QuantumVault contributors"]
+license     = "Apache-2.0"
+repository  = "https://github.com/007krcs/quantum-vault"
+homepage    = "https://github.com/007krcs/quantum-vault"
+documentation = "https://docs.rs/qv-core"
+readme      = "README.md"
+keywords    = ["cryptography", "post-quantum", "ml-dsa", "falcon", "tokens"]
+categories  = ["cryptography", "authentication", "no-std"]
+include     = [
+    "src/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+]
 
 [dependencies]
 ml-dsa = { version = "0.1.0-rc.8", features = ["alloc", "rand_core", "zeroize"] }
@@ -14,7 +28,7 @@ rand = { version = "0.8", features = ["getrandom"] }
 thiserror = "1"
 zeroize = { version = "1", features = ["derive"] }
 
-# v4.1: Falcon signatures via PQClean (pure C, wrapped in pqcrypto-falcon).
+# Falcon signatures via PQClean (pure C, wrapped in pqcrypto-falcon).
 # Feature-gated so targets without a C toolchain (e.g. wasm32-unknown-unknown)
 # can still build ML-DSA-only. Enable with `--features falcon`.
 pqcrypto-falcon = { version = "0.4", default-features = false, features = ["std"], optional = true }

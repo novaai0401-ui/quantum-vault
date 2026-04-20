@@ -1,90 +1,104 @@
 # QuantumVault
 
-> Post-quantum (ML-DSA-87, Falcon-512/1024) cryptographic tokens with
-> three embedding surfaces — native FFI, portable WASM, and a
-> zero-dependency REST server. Usable from any language.
+> Post-quantum (ML-DSA-87, Falcon-512/1024) cryptographic tokens for every
+> ecosystem — **npm, crates.io, GitHub Releases, GHCR**. Usable from any
+> language. Quantum-safe, authenticated, encrypted, replay-protected.
 
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-![version](https://img.shields.io/badge/version-v4.1--γ-7dd3fc.svg)
-![npm deps](https://img.shields.io/badge/server%20npm%20deps-0-success.svg)
+![version](https://img.shields.io/badge/version-v4.2-7dd3fc.svg)
+[![npm sdk](https://img.shields.io/npm/v/@quantumvault/sdk?label=%40quantumvault%2Fsdk)](https://www.npmjs.com/package/@quantumvault/sdk)
+[![npm wasm](https://img.shields.io/npm/v/@quantumvault/wasm?label=%40quantumvault%2Fwasm)](https://www.npmjs.com/package/@quantumvault/wasm)
+[![crates.io](https://img.shields.io/crates/v/qv-core.svg)](https://crates.io/crates/qv-core)
+![server npm deps](https://img.shields.io/badge/server%20npm%20deps-0-success.svg)
 ![WASM size](https://img.shields.io/badge/WASM%20size-127%20KB-success.svg)
 
-- **Docs & live demo:** see `qv-docs/` (deploys as a static site on Render).
-- **REST API reference:** `qv-docs` → *REST API* page.
-- **Language examples:** `qv-docs` → *Languages* page, sources under
-  `qv-ffi/examples/` and `qv-wasm/demo-node.mjs`.
+## Install
 
----
+```bash
+# JavaScript / TypeScript (Node, Deno, Bun, Cloudflare Workers)
+npm install @quantumvault/sdk
+
+# Browsers / edge — 127 KB wasm
+npm install @quantumvault/wasm
+
+# Rust
+cargo add qv-core --features falcon
+
+# REST server (zero npm deps, multi-arch)
+docker run -p 7433:7433 \
+  -e QV_MASTER_KEY_HEX=$(openssl rand -hex 32) \
+  ghcr.io/007krcs/qv-server:4.2
+
+# C / Go / C# / Swift — prebuilt libqv
+curl -L https://github.com/007krcs/quantum-vault/releases/latest/download/libqv-$(uname -m)-$(uname -s | tr A-Z a-z).tar.gz | tar xz
+```
+
+## 30-second demo (JavaScript)
+
+```js
+import {
+  generateKeypair, MutationChain,
+  issueToken, verifyToken,
+} from '@quantumvault/sdk';
+
+const { signingKey, verifyingKey, encryptKey } = generateKeypair();
+const chain = new MutationChain();
+
+const { tokenHex } = issueToken({
+  signingKeySeed: signingKey, encryptKey, chain,
+  claims: { sub: 'user-123', role: 'admin' },
+  ttl: 3600,
+});
+
+const { claims } = verifyToken({
+  token: tokenHex, verifyingKey, encryptKey,
+  chain: new MutationChain(chain.state),
+});
+// → { sub: 'user-123', role: 'admin' }
+```
+
+## What's in v4.2
+
+- **Installable everywhere.** npm (`@quantumvault/sdk`, `@quantumvault/wasm`),
+  crates.io (`qv-core`), Docker (`ghcr.io/007krcs/qv-server`), and prebuilt
+  FFI binaries on GitHub Releases for 5 platforms.
+- **Falcon dispatch** in `issue_token` / `verify_token`. Falcon-512 gives you
+  656-byte signatures — **7.1× smaller than ML-DSA-87** and 6× faster to
+  verify. New SuiteIds `0x10` (Falcon-512) and `0x11` (Falcon-1024) on the
+  wire.
+- **Offline builds restored.** `./vendor` now contains Falcon + all transitive
+  crates; `cargo build` works air-gapped.
+- **Docker image.** `ghcr.io/007krcs/qv-server` runs as non-root, multi-arch
+  (amd64 + arm64), health-checked.
 
 ## Repo layout
 
 ```
-qv-core/    Rust library. Tokens, claims, mutation chain, Falcon wrapper.
-qv-ffi/     C ABI wrapper → qv.dll / libqv.so / libqv.dylib.
-qv-wasm/    WebAssembly wrapper. Custom getrandom shim, one host import.
-qv-sdk/     JavaScript SDK (Node stdlib only).
-qv-server/  REST server — server-sovereign.mjs (zero npm deps).
-qv-cli/     Optional CLI front-end.
-qv-docs/    Vite + React + tekivex-ui docs/demo site.
-vendor/     Vendored Rust source tree (offline-buildable).
-render.yaml Render blueprint — deploys docs + server in one click.
+qv-core/    Rust library → crates.io (qv-core)
+qv-ffi/     C ABI wrapper → GitHub Releases (libqv.{so,dylib,dll})
+qv-wasm/    WebAssembly build → npm (@quantumvault/wasm)
+qv-sdk/     JavaScript SDK → npm (@quantumvault/sdk)
+qv-server/  REST server → ghcr.io/007krcs/qv-server (Dockerfile included)
+qv-cli/     Optional CLI
+qv-docs/    Vite + React + tekivex-ui docs/demo site
+vendor/     Vendored Rust source tree (offline-buildable)
+.github/    release.yml — publishes everything on `git tag v*`
+render.yaml Render blueprint — deploys docs + server in one click
 ```
 
-## Quickstart
+## Language examples
 
-### Option A — REST server (fastest to see it work)
-
-```bash
-node qv-server/server-sovereign.mjs
-curl -s http://localhost:7433/v3/health
-```
-
-### Option B — native FFI (Python via ctypes)
-
-```bash
-cargo build -p qv-ffi --release
-python qv-ffi/examples/python/demo.py          # ML-DSA-87
-python qv-ffi/examples/python/demo_falcon.py   # Falcon-512 + 1024
-```
-
-### Option C — WebAssembly (Node, browser, Workers, Deno)
-
-```bash
-rustup target add wasm32-unknown-unknown
-cargo build -p qv-wasm --release --target wasm32-unknown-unknown
-node qv-wasm/demo-node.mjs
-```
-
-### Option D — run the docs site locally
-
-```bash
-cd qv-docs
-npm install
-npm run dev      # http://localhost:5173
-```
-
-## What's in v4.1
-
-- **Falcon-512 / Falcon-1024** through `qv-core`, `qv-ffi`, and Python
-  demos. Falcon-512 signatures are 656 B — **7.1× smaller than ML-DSA-87**
-  and verify 6× faster.
-- **worker_threads batch-verify**. 4-worker pool → 558 verify/s
-  end-to-end vs 158/s in-thread.
-- **WASM unblocked.** Custom `getrandom` shim for v0.3/v0.4 custom
-  backend plus v0.2 `register_custom_getrandom!`. 127 KB `.wasm`, one
-  host import (`qv_host_random`).
-
-See `SOVEREIGN_V4.md` for the full v4.x architecture notes.
+See [`qv-ffi/examples/`](./qv-ffi/examples) for native FFI (C, Python, Go, C#)
+and [`qv-sdk/`](./qv-sdk) for higher-level language wrappers (Java, Ruby, PHP,
+Python, Go, C# — all talk to the REST server or the FFI binaries).
 
 ## Deploy to Render
 
 ```bash
 # Push this repo to GitHub, then in Render: New → Blueprint → pick repo.
-# The render.yaml in this directory deploys two services:
+# render.yaml deploys two services:
 #   - qv-docs   (static site)
-#   - qv-server (Node web service, zero npm)
-# After the server is live, set VITE_QV_API on the docs site to its
-# public URL (or visit /demo?api=https://your-server for quick testing).
+#   - qv-server (Node web service, zero npm deps)
 ```
 
 ## License
