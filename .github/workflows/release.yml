@@ -66,6 +66,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Verify version matches tag
+        if: github.event_name == 'push'
         working-directory: qv-sdk
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -101,6 +102,13 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Build wasm (ML-DSA-only, no falcon)
+        env:
+          # Job-level env sets RUSTFLAGS=-D warnings, which overrides the
+          # `[target.wasm32-unknown-unknown] rustflags = ...` entry in
+          # .cargo/config.toml. We need the `getrandom_backend="custom"`
+          # cfg here so getrandom 0.3/0.4 pick up qv-wasm's
+          # `__getrandom_v03_custom` shim instead of erroring out.
+          RUSTFLAGS: '-D warnings --cfg getrandom_backend="custom"'
         run: |
           cargo build -p qv-wasm --release --target wasm32-unknown-unknown
 
@@ -111,6 +119,7 @@ jobs:
           ls -lh qv-wasm/pkg/
 
       - name: Verify version matches tag
+        if: github.event_name == 'push'
         working-directory: qv-wasm/pkg
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
