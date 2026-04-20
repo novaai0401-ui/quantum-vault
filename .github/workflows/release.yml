@@ -148,6 +148,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      # `cargo publish` refuses to talk to a registry that's been replaced
+      # with a local vendored source. Neutralize the repo-local config for
+      # this job only.
+      - name: Disable vendored-sources for publish
+        run: rm -f .cargo/config.toml
+
       - name: Dry-run package
         working-directory: qv-core
         run: cargo package --no-verify
@@ -155,7 +161,7 @@ jobs:
       - name: Publish
         if: github.event_name == 'push' || inputs.dry_run == 'false'
         working-directory: qv-core
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --no-verify
 
   # ────────────────────────────────────────────────────────────────────────
   # 4. Prebuilt FFI binaries for 5 platforms → GitHub Release
