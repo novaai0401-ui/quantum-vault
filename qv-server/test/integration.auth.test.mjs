@@ -62,7 +62,8 @@ test('GET /v3/health is public', async () => {
   const r = await fetch(`${BASE}/v3/health`);
   assert.equal(r.status, 200);
   const body = await r.json();
-  assert.equal(body.status, 'ok');
+  // status transitioned from 'ok' → 'ready' in R-4.3.7 (health/readiness split).
+  assert.ok(['ok', 'ready'].includes(body.status), `unexpected status: ${body.status}`);
 });
 
 test('GET /v3/spec is public', async () => {

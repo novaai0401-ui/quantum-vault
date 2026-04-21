@@ -13,6 +13,19 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Liveness / readiness split** ([R-4.3.7], #7). Two new probes let
+  Kubernetes (and any load balancer) distinguish "is the process
+  alive" from "can this instance accept traffic":
+  - `GET /v3/live` — cheap liveness. Returns 200 as long as the event
+    loop is responsive. Never 503s during drain — draining is a
+    readiness transition, not a liveness failure.
+  - `GET /v3/ready` — functional readiness. 200 once keystore and
+    revocation list are loaded; 503 before boot completes or while
+    draining. Target this from `readinessProbe`.
+  - `GET /v3/health` — kept as a back-compat alias of `/v3/ready` so
+    v4.2 clients that polled it continue to work. Status string
+    changed from `"ok"` to `"ready"` (old value still accepted by the
+    test suite).
 - **Graceful SIGTERM / SIGINT shutdown** ([R-4.3.8], #8). On signal the
   server stops accepting new connections, flips `/v3/health` to
   `503 draining` so load balancers steer traffic away, waits for
@@ -78,7 +91,7 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
   bad_token responses are byte-identical. Zero npm deps added.
 - Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
   `QV_ADMIN_TOKEN_SHA256`.
-- Test suite: 116 tests (87 unit + 29 integration; 1 skipped on win32) under
+- Test suite: 120 tests (87 unit + 33 integration; 1 skipped on win32) under
   `qv-server/test/`. Run with `npm test`.
 
 ---

@@ -68,7 +68,7 @@ test('graceful shutdown: /v3/health returns 503 during drain, then exits 0', { s
     const ok = await fetch(`${BASE}/v3/health`);
     assert.equal(ok.status, 200);
     const okBody = await ok.json();
-    assert.equal(okBody.status, 'ok');
+    assert.ok(['ok', 'ready'].includes(okBody.status), `unexpected status: ${okBody.status}`);
 
     // Trigger drain. On Windows, SIGTERM kills immediately via libuv, so we
     // use the more-portable `process.kill(pid, 'SIGINT')` and hope for a clean

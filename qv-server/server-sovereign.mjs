@@ -343,18 +343,45 @@ function respondBodyError(res, e) {
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
+// ─── Liveness / Readiness (R-4.3.7) ─────────────────────────────────────────
+// /v3/live   — cheap liveness probe. 200 unless the event loop is wedged.
+//              k8s livenessProbe target. NEVER reports 503 during drain;
+//              draining is a ready-state transition, not a liveness failure.
+// /v3/ready  — functional readiness. 503 until keystore+chains are loaded
+//              or while draining. k8s readinessProbe target.
+// /v3/health — back-compat alias for /v3/ready (v4.2 clients).
+let bootReady = false; // flipped true once loadKeystore() + loadRevoked() complete.
+
+route('GET', '/v3/live', publicRL((_req, res) => {
+  json(res, 200, { status: 'alive', pid: process.pid, uptimeSecs: Math.round(process.uptime()) });
+}));
+
+function readyPayload() {
+  const draining = !!(shutdownCtl && shutdownCtl.isDraining());
+  const ok = bootReady && !draining;
+  return {
+    ok,
+    status:       ok ? 'ready' : (draining ? 'draining' : 'starting'),
+    version:      '4.0.0-alpha',
+    algorithm:    'ML-DSA-87 (NIST FIPS 204)',
+    sovereign:    true,
+    dependencies: 'zero-npm',
+    keysLoaded:   keystore.size,
+    inFlight:     shutdownCtl ? shutdownCtl.inFlight : 0,
+    draining,
+  };
+}
+
+route('GET', '/v3/ready', publicRL((_req, res) => {
+  const p = readyPayload();
+  json(res, p.ok ? 200 : 503, p);
+}));
+
+// Back-compat alias. Kept identical to /v3/ready to avoid surprising v4.2
+// clients that polled /v3/health as a readiness signal.
 route('GET', '/v3/health', publicRL((_req, res) => {
-  // During drain return 503 so load balancers stop routing traffic here.
-  if (shutdownCtl && shutdownCtl.isDraining()) {
-    return json(res, 503, {
-      status: 'draining', version: '4.0.0-alpha',
-      inFlight: shutdownCtl.inFlight,
-    });
-  }
-  json(res, 200, {
-    status: 'ok', version: '4.0.0-alpha', algorithm: 'ML-DSA-87 (NIST FIPS 204)',
-    sovereign: true, dependencies: 'zero-npm', keysLoaded: keystore.size,
-  });
+  const p = readyPayload();
+  json(res, p.ok ? 200 : 503, p);
 }));
 
 route('GET', '/v3/spec', publicRL((_req, res) => {
@@ -705,6 +732,7 @@ server.on('request', (req, res) => {
 // ─── Boot ───────────────────────────────────────────────────────────────────
 loadKeystore();
 loadRevoked();
+bootReady = true;
 server.listen(PORT, HOST, () => {
   console.log(`\n╔════════════════════════════════════════════╗`);
   console.log(`║  QuantumVault v4.1 — Sovereign Server      ║`);
