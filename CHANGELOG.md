@@ -13,6 +13,23 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Prometheus metrics at `/v3/metrics`** ([R-4.3.5], #5). Zero-dep in-process
+  exposition in Prometheus text format v0.0.4. Initial metric set:
+  `qv_http_requests_total{method,path,status}`,
+  `qv_http_request_duration_seconds` histogram (buckets tuned for sub-ms
+  verify latency),
+  `qv_auth_denies_total{reason}`,
+  `qv_rate_limit_denies_total{category}`,
+  `qv_token_issue_total{suite,tokenType,result}`,
+  `qv_token_verify_total{result}`,
+  `qv_keys_total`, `qv_revoked_total`, `qv_inflight_requests`,
+  `qv_process_uptime_seconds`.
+  Path labels use the **route template** (e.g. `/v3/keys/:id`), never the
+  raw URL — cardinality stays bounded no matter how many keys exist.
+  The endpoint is **admin-bearer protected by default**; set
+  `QV_METRICS_PUBLIC=true` to expose anonymously (use only behind a
+  trusted mesh). Disable entirely with `QV_METRICS_DISABLED=true`.
+  14 new tests (9 unit + 5 integration).
 - **Liveness / readiness split** ([R-4.3.7], #7). Two new probes let
   Kubernetes (and any load balancer) distinguish "is the process
   alive" from "can this instance accept traffic":
@@ -91,7 +108,7 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
   bad_token responses are byte-identical. Zero npm deps added.
 - Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
   `QV_ADMIN_TOKEN_SHA256`.
-- Test suite: 120 tests (87 unit + 33 integration; 1 skipped on win32) under
+- Test suite: 134 tests (96 unit + 38 integration; 1 skipped on win32) under
   `qv-server/test/`. Run with `npm test`.
 
 ---

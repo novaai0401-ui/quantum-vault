@@ -42,6 +42,7 @@ import {
   extractOrMintRequestId, applyRequestId,
 } from './audit.mjs';
 import { createShutdown } from './shutdown.mjs';
+import { createMetrics, loadMetricsConfig } from './metrics.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -83,6 +84,23 @@ if (RATE_CFG.disabled) {
   console.log(`✔ Rate limits (per-IP rpm): public=${RATE_CFG.rpm.public} verify=${RATE_CFG.rpm.verify} admin=${RATE_CFG.rpm.admin} authFail=${RATE_CFG.rpm.authFail}; body ≤ ${RATE_CFG.maxBodyBytes}B, claims ≤ ${RATE_CFG.maxClaimsBytes}B`);
 }
 
+// ─── Metrics (R-4.3.5) ──────────────────────────────────────────────────────
+const METRICS_CFG = loadMetricsConfig();
+const metrics = createMetrics();
+const mHttpReqs   = metrics.counter('qv_http_requests_total',  { help: 'Total HTTP requests by method/path/status' });
+const mHttpDur    = metrics.histogram('qv_http_request_duration_seconds', { help: 'HTTP request duration in seconds' });
+const mAuthDenies = metrics.counter('qv_auth_denies_total',    { help: 'Admin-bearer auth denials by reason' });
+const mRateDenies = metrics.counter('qv_rate_limit_denies_total', { help: 'Rate-limit denials by category' });
+const mTokIssue   = metrics.counter('qv_token_issue_total',    { help: 'Token issuances by suite/tokenType/result' });
+const mTokVerify  = metrics.counter('qv_token_verify_total',   { help: 'Token verifications by result' });
+const mKeys       = metrics.gauge('qv_keys_total',             { help: 'Keys loaded in the keystore' });
+const mRevoked    = metrics.gauge('qv_revoked_total',          { help: 'Revoked key ids' });
+const mInflight   = metrics.gauge('qv_inflight_requests',      { help: 'In-flight HTTP requests' });
+const mUptime     = metrics.gauge('qv_process_uptime_seconds', { help: 'Process uptime in seconds' });
+if (METRICS_CFG.enabled) {
+  console.log(`✔ Metrics: /v3/metrics ${METRICS_CFG.public ? '(PUBLIC — behind mesh only)' : '(admin-bearer protected)'}`);
+}
+
 // ─── Audit log (R-4.3.6) ────────────────────────────────────────────────────
 const AUDIT_CFG = loadAuditConfig(process.env, DATA_DIR);
 const audit     = createAuditor({ config: AUDIT_CFG });
@@ -106,13 +124,22 @@ function onAuthEvent(req, verdict) {
     reason: verdict.reason,
     authFailRemaining: af.remaining,
   });
+  mAuthDenies.inc({ reason: verdict.reason });
 }
-const admin = (handler) => rateLimit(
-  requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent }),
-  limiter, 'admin',
-);
-const publicRL = (handler) => rateLimit(handler, limiter, 'public');
-const verifyRL = (handler) => rateLimit(handler, limiter, 'verify');
+// Wrap the rate-limit middleware to count denies in the Prometheus metric.
+// We detect the 429 by snooping the outbound status on res.on('finish').
+function metered(category, handler) {
+  const wrapped = rateLimit(handler, limiter, category);
+  return (req, res, m) => {
+    res.on('finish', () => {
+      if (res.statusCode === 429) mRateDenies.inc({ category });
+    });
+    return wrapped(req, res, m);
+  };
+}
+const admin    = (handler) => metered('admin',   requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent }));
+const publicRL = (handler) => metered('public',  handler);
+const verifyRL = (handler) => metered('verify',  handler);
 
 // ─── Master key (seals all signing keys at rest) ────────────────────────────
 // Generated once on first boot. Chmod 0600. If deleted, all sealed signing
@@ -315,7 +342,19 @@ function appendChain(keyId, counter, stateHash) {
 // ─── Minimal HTTP framework ─────────────────────────────────────────────────
 const routes = [];
 // pattern may be a string (exact) or a RegExp (match result passed to handler as 3rd arg)
-function route(method, pattern, handler) { routes.push({ method, pattern, handler }); }
+// template is a stable label for metrics (keeps cardinality bounded — we never
+// label metrics with the raw URL, only the route template, e.g. "/v3/keys/:id").
+function route(method, pattern, handler, template) {
+  if (!template) {
+    template = typeof pattern === 'string'
+      ? pattern
+      : String(pattern)
+          .replace(/^\/\^/, '').replace(/\$\/$/, '')
+          .replace(/\\\//g, '/')
+          .replace(/\(\[\^\/\]\+\)/g, ':id');
+  }
+  routes.push({ method, pattern, handler, template });
+}
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
@@ -454,6 +493,7 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
       keyId, suite, tokenType, ttlSecs: ttl,
       sizeBytes: tokenBytes.length, mutationCtr: Number(chain.counter),
     });
+    mTokIssue.inc({ suite, tokenType, result: 'ok' });
     json(res, 200, {
       tokenHex, tokenB64: b64ue(tokenBytes), sizeBytes: tokenBytes.length,
       issuedAt: new Date().toISOString(), ttlSecs: ttl,
@@ -464,6 +504,7 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
       level: 'error', requestId: req.requestId, ip: extractClientIp(req),
       keyId, suite, tokenType, reason: e.message,
     });
+    mTokIssue.inc({ suite, tokenType, result: 'error' });
     err(res, 500, 'ISSUE_FAILED', e.message);
   }
 }));
@@ -490,12 +531,14 @@ route('POST', '/v3/token/verify', verifyRL(async (req, res) => {
       token: tokenBytes, verifyingKey: entry.verifyingKey,
       encryptKey: entry.encryptKey, chain: vchain,
     });
+    mTokVerify.inc({ result: 'ok' });
     json(res, 200, {
       valid: true, claims: out.claims,
       issuedAt: new Date(Number(out.issuedAt / 1000n)).toISOString(),
       ttlSecs: out.ttl, mutationCtr: Number(out.mutationCtr),
     });
   } catch (e) {
+    mTokVerify.inc({ result: 'invalid' });
     res.writeHead(401, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ valid: false, error: { code: e.message } }));
   }
@@ -633,12 +676,35 @@ route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((req, res, m) => {
     requestId: req.requestId, ip: extractClientIp(req),
     keyId,
   });
+  mRevoked.set(revoked.size);
   json(res, 200, { keyId, revoked: true, revokedAt: new Date().toISOString() });
 }));
 
 route('GET', '/v3/revoked', publicRL((_req, res) => {
   json(res, 200, { revoked: [...revoked], count: revoked.size });
 }));
+
+// ─── /v3/metrics (Prometheus text exposition) ───────────────────────────────
+// Admin-bearer gated by default; public only when QV_METRICS_PUBLIC=true.
+function metricsHandler(req, res) {
+  if (!METRICS_CFG.enabled) return err(res, 404, 'NOT_FOUND', 'metrics disabled');
+  // Refresh gauges on demand so the scrape sees current values.
+  mKeys.set(keystore.size);
+  mRevoked.set(revoked.size);
+  mInflight.set(shutdownCtl ? shutdownCtl.inFlight : 0);
+  mUptime.set(Math.round(process.uptime()));
+  const body = metrics.render();
+  res.writeHead(200, {
+    'content-type':   'text/plain; version=0.0.4; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+if (METRICS_CFG.public) {
+  route('GET', '/v3/metrics', publicRL(metricsHandler));
+} else {
+  route('GET', '/v3/metrics', admin(metricsHandler));
+}
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────
 // Placeholder; real controller is installed after `server` is created so the
@@ -651,18 +717,23 @@ const server = createServer(async (req, res) => {
   applyRequestId(req, res, reqId);
   const t0 = process.hrtime.bigint();
   res.on('finish', () => {
-    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    const durSecs = Number(process.hrtime.bigint() - t0) / 1e9;
     let pathname = req.url;
     try { pathname = new URL(req.url, `http://${req.headers.host || 'x'}`).pathname; } catch {}
+    // Bucket metrics by route TEMPLATE, not raw URL — avoids cardinality blow-up.
+    const mPath = req._routeTemplate || 'unmatched';
     audit.event('http.request', {
       level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
       requestId: reqId,
       ip: extractClientIp(req),
       method: req.method,
       path:   pathname,
+      template: mPath,
       status: res.statusCode,
-      ms:     Number(ms.toFixed(2)),
+      ms:     Number((durSecs * 1000).toFixed(2)),
     });
+    mHttpReqs.inc({ method: req.method, path: mPath, status: String(res.statusCode) });
+    mHttpDur.observe({ method: req.method, path: mPath }, durSecs);
   });
 
   // 1. Security headers (HSTS, CSP, X-Frame-Options, etc.) on every response.
@@ -690,6 +761,7 @@ const server = createServer(async (req, res) => {
     }
   }
   if (!matched) return err(res, 404, 'NOT_FOUND', `${req.method} ${url.pathname}`);
+  req._routeTemplate = matched.template;
   try { await matched.handler(req, res, matchResult); }
   catch (e) { err(res, 500, 'INTERNAL', e.message); }
 });
