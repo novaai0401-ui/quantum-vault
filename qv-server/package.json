@@ -7,9 +7,9 @@
   "scripts": {
     "start":        "node server-sovereign.mjs",
     "start:legacy": "node server.mjs",
-    "test":         "node --test --test-timeout=30000 test/auth.test.mjs test/ratelimit.test.mjs test/security.test.mjs test/integration.auth.test.mjs test/integration.ratelimit.test.mjs test/integration.security.test.mjs",
-    "test:unit":    "node --test test/auth.test.mjs test/ratelimit.test.mjs test/security.test.mjs",
-    "test:it":      "node --test --test-timeout=30000 test/integration.auth.test.mjs test/integration.ratelimit.test.mjs test/integration.security.test.mjs",
+    "test":         "node --test --test-timeout=30000 test/auth.test.mjs test/ratelimit.test.mjs test/security.test.mjs test/audit.test.mjs test/integration.auth.test.mjs test/integration.ratelimit.test.mjs test/integration.security.test.mjs test/integration.audit.test.mjs",
+    "test:unit":    "node --test test/auth.test.mjs test/ratelimit.test.mjs test/security.test.mjs test/audit.test.mjs",
+    "test:it":      "node --test --test-timeout=30000 test/integration.auth.test.mjs test/integration.ratelimit.test.mjs test/integration.security.test.mjs test/integration.audit.test.mjs",
     "mint-token":   "node -e \"import('./auth.mjs').then(m=>{const t=m.mintAdminToken();console.log('QV_ADMIN_TOKEN='+t.token);console.log('QV_ADMIN_TOKEN_SHA256='+t.sha256)})\""
   },
   "dependencies": {},

@@ -37,6 +37,10 @@ import {
   loadSecurityConfig, applySecurityHeaders,
   loadCorsConfig,     applyCors as applyCorsHeaders,
 } from './security.mjs';
+import {
+  loadAuditConfig, createAuditor,
+  extractOrMintRequestId, applyRequestId,
+} from './audit.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -78,7 +82,13 @@ if (RATE_CFG.disabled) {
   console.log(`✔ Rate limits (per-IP rpm): public=${RATE_CFG.rpm.public} verify=${RATE_CFG.rpm.verify} admin=${RATE_CFG.rpm.admin} authFail=${RATE_CFG.rpm.authFail}; body ≤ ${RATE_CFG.maxBodyBytes}B, claims ≤ ${RATE_CFG.maxClaimsBytes}B`);
 }
 
-// Temporary audit sink until R-4.3.6 lands the structured JSONL log.
+// ─── Audit log (R-4.3.6) ────────────────────────────────────────────────────
+const AUDIT_CFG = loadAuditConfig(process.env, DATA_DIR);
+const audit     = createAuditor({ config: AUDIT_CFG });
+if (!AUDIT_CFG.disabled) {
+  console.log(`✔ Audit log: file=${AUDIT_CFG.fileOn ? AUDIT_CFG.path : 'off'} stdout=${AUDIT_CFG.stdout}`);
+}
+
 function onAuthEvent(req, verdict) {
   if (verdict.reason === 'ok' || verdict.reason === 'anon') return;
   // Count against the auth-fail bucket. If the bucket is drained, future
@@ -88,7 +98,13 @@ function onAuthEvent(req, verdict) {
   // can raise QV_RATE_AUTHFAIL_RPM or disable via QV_RATE_LIMIT_DISABLED.
   const ip  = extractClientIp(req);
   const af  = limiter.recordAuthFail(ip);
-  console.warn(`auth.deny ${verdict.reason} ip=${ip} path=${req.url} authFailRemaining=${af.remaining}`);
+  audit.event('auth.deny', {
+    level: 'warn',
+    requestId: req.requestId,
+    ip, method: req.method, path: req.url,
+    reason: verdict.reason,
+    authFailRemaining: af.remaining,
+  });
 }
 const admin = (handler) => rateLimit(
   requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent }),
@@ -356,6 +372,10 @@ route('POST', '/v3/keygen', admin(async (req, res) => {
   });
   chains.set(keyId, new MutationChain());
   saveKeystore();
+  audit.event('keygen', {
+    requestId: req.requestId, ip: extractClientIp(req),
+    keyId, label: body.label ?? keyId, algorithm: 'ML-DSA-87',
+  });
   json(res, 201, {
     keyId, label: body.label ?? keyId,
     verifyingKeyB64: b64ue(kp.verifyingKey),
@@ -394,12 +414,23 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
       chain, claims, ttl, suite: suiteId, tokenType: typeId,
     });
     appendChain(keyId, chain.counter, chain.state);
+    audit.event('token.issue', {
+      requestId: req.requestId, ip: extractClientIp(req),
+      keyId, suite, tokenType, ttlSecs: ttl,
+      sizeBytes: tokenBytes.length, mutationCtr: Number(chain.counter),
+    });
     json(res, 200, {
       tokenHex, tokenB64: b64ue(tokenBytes), sizeBytes: tokenBytes.length,
       issuedAt: new Date().toISOString(), ttlSecs: ttl,
       mutationCtr: Number(chain.counter), suite, tokenType,
     });
-  } catch (e) { err(res, 500, 'ISSUE_FAILED', e.message); }
+  } catch (e) {
+    audit.event('token.issue', {
+      level: 'error', requestId: req.requestId, ip: extractClientIp(req),
+      keyId, suite, tokenType, reason: e.message,
+    });
+    err(res, 500, 'ISSUE_FAILED', e.message);
+  }
 }));
 
 route('POST', '/v3/token/verify', verifyRL(async (req, res) => {
@@ -556,12 +587,17 @@ route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, publicRL((_req, res, m) => {
   res.end(Buffer.from(v.verifyingKey));
 }));
 
-route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((_req, res, m) => {
+route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   if (!keystore.has(keyId)) return err(res, 404, 'KEY_NOT_FOUND', keyId);
   if (revoked.has(keyId))    return err(res, 409, 'ALREADY_REVOKED', keyId);
   revoked.add(keyId);
   saveRevoked();
+  audit.event('token.revoke', {
+    level: 'warn',
+    requestId: req.requestId, ip: extractClientIp(req),
+    keyId,
+  });
   json(res, 200, { keyId, revoked: true, revokedAt: new Date().toISOString() });
 }));
 
@@ -571,6 +607,25 @@ route('GET', '/v3/revoked', publicRL((_req, res) => {
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
+  // 0. Request-Id: accept from caller if safe, else mint UUID. Echoed back.
+  const reqId = extractOrMintRequestId(req);
+  applyRequestId(req, res, reqId);
+  const t0 = process.hrtime.bigint();
+  res.on('finish', () => {
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    let pathname = req.url;
+    try { pathname = new URL(req.url, `http://${req.headers.host || 'x'}`).pathname; } catch {}
+    audit.event('http.request', {
+      level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+      requestId: reqId,
+      ip: extractClientIp(req),
+      method: req.method,
+      path:   pathname,
+      status: res.statusCode,
+      ms:     Number(ms.toFixed(2)),
+    });
+  });
+
   // 1. Security headers (HSTS, CSP, X-Frame-Options, etc.) on every response.
   applySecurityHeaders(res, SEC_CFG);
 

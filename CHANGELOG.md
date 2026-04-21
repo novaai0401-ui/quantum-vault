@@ -13,6 +13,20 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Request-ID propagation + structured JSONL audit log** ([R-4.3.6], #6).
+  Every response now carries an `X-Request-Id` header — echoed from the
+  caller when it matches `^[A-Za-z0-9._-]{1,64}$`, otherwise a fresh
+  UUID v4. The id is threaded through every audit event for that
+  request so `grep` on a single id yields a full trace.
+  Structured JSON-Lines audit events (`http.request`, `auth.deny`,
+  `keygen`, `token.issue`, `token.revoke`) are written to
+  `<DATA_DIR>/audit.log` (0600) and to stdout by default. Configurable
+  via `QV_AUDIT_LOG`, `QV_AUDIT_STDOUT`, `QV_AUDIT_FILE`, and
+  `QV_AUDIT_DISABLED`. Known-sensitive keys (`token`, `authorization`,
+  `masterKey`, `privateKey`, `password`, `cookie`, …) are dropped by
+  the auditor before serialisation; a targeted integration test
+  confirms the plaintext admin token never reaches the log. Zero
+  npm deps. 20 new tests (13 unit + 7 integration).
 - **Security headers + CORS lockdown** ([R-4.3.12], #30). Every response now
   carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: no-referrer`,
@@ -54,7 +68,7 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
   bad_token responses are byte-identical. Zero npm deps added.
 - Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
   `QV_ADMIN_TOKEN_SHA256`.
-- Test suite: 87 tests (66 unit + 21 integration) under
+- Test suite: 107 tests (79 unit + 28 integration) under
   `qv-server/test/`. Run with `npm test`.
 
 ---
