@@ -13,6 +13,16 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Graceful SIGTERM / SIGINT shutdown** ([R-4.3.8], #8). On signal the
+  server stops accepting new connections, flips `/v3/health` to
+  `503 draining` so load balancers steer traffic away, waits for
+  in-flight requests to finish, then runs an ordered teardown — worker
+  pool shutdown, audit fd close, sweep-timer clear — before exiting.
+  A hard timeout (`QV_SHUTDOWN_TIMEOUT_MS`, default 30000) forces
+  `exit(1)` if drain stalls. A `server.shutdown` event is emitted to
+  the audit log at each phase so operators can grep the transition.
+  Zero npm deps. 9 new tests (8 unit + 1 integration, the latter
+  skipped on win32 where Node does not deliver signals to children).
 - **Request-ID propagation + structured JSONL audit log** ([R-4.3.6], #6).
   Every response now carries an `X-Request-Id` header — echoed from the
   caller when it matches `^[A-Za-z0-9._-]{1,64}$`, otherwise a fresh
@@ -68,7 +78,7 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
   bad_token responses are byte-identical. Zero npm deps added.
 - Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
   `QV_ADMIN_TOKEN_SHA256`.
-- Test suite: 107 tests (79 unit + 28 integration) under
+- Test suite: 116 tests (87 unit + 29 integration; 1 skipped on win32) under
   `qv-server/test/`. Run with `npm test`.
 
 ---

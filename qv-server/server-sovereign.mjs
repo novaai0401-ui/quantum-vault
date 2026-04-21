@@ -41,6 +41,7 @@ import {
   loadAuditConfig, createAuditor,
   extractOrMintRequestId, applyRequestId,
 } from './audit.mjs';
+import { createShutdown } from './shutdown.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -343,6 +344,13 @@ function respondBodyError(res, e) {
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
 route('GET', '/v3/health', publicRL((_req, res) => {
+  // During drain return 503 so load balancers stop routing traffic here.
+  if (shutdownCtl && shutdownCtl.isDraining()) {
+    return json(res, 503, {
+      status: 'draining', version: '4.0.0-alpha',
+      inFlight: shutdownCtl.inFlight,
+    });
+  }
   json(res, 200, {
     status: 'ok', version: '4.0.0-alpha', algorithm: 'ML-DSA-87 (NIST FIPS 204)',
     sovereign: true, dependencies: 'zero-npm', keysLoaded: keystore.size,
@@ -606,6 +614,10 @@ route('GET', '/v3/revoked', publicRL((_req, res) => {
 }));
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────
+// Placeholder; real controller is installed after `server` is created so the
+// health handler (which runs before listen()) can reference `shutdownCtl`.
+let shutdownCtl = null;
+
 const server = createServer(async (req, res) => {
   // 0. Request-Id: accept from caller if safe, else mint UUID. Echoed back.
   const reqId = extractOrMintRequestId(req);
@@ -653,6 +665,41 @@ const server = createServer(async (req, res) => {
   if (!matched) return err(res, 404, 'NOT_FOUND', `${req.method} ${url.pathname}`);
   try { await matched.handler(req, res, matchResult); }
   catch (e) { err(res, 500, 'INTERNAL', e.message); }
+});
+
+// ─── Graceful shutdown (R-4.3.8) ────────────────────────────────────────────
+const SHUTDOWN_TIMEOUT_MS = Number(process.env.QV_SHUTDOWN_TIMEOUT_MS ?? 30000);
+shutdownCtl = createShutdown({
+  server,
+  teardown: [
+    async () => {
+      if (verifyPool) {
+        try { await verifyPool.shutdown(); } catch {}
+      }
+    },
+    () => { try { audit.close(); } catch {} },
+    () => { try { clearInterval(_sweepTimer); } catch {} },
+  ],
+  timeoutMs: SHUTDOWN_TIMEOUT_MS,
+  log: (msg, level = 'info') => {
+    audit.event('server.shutdown', { level, reason: msg });
+    const line = `[shutdown] ${msg}\n`;
+    if (level === 'error') process.stderr.write(line);
+    else                   process.stdout.write(line);
+  },
+});
+shutdownCtl.install();
+
+// Wrap the dispatcher so in-flight requests are tracked. We can't re-wrap
+// the createServer listener at this point, so we install a one-shot counter
+// via 'request' event instead — but createServer already registered our
+// listener. Instead, call beginRequest/endRequest from within the dispatcher:
+server.on('request', (req, res) => {
+  shutdownCtl.beginRequest();
+  let done = false;
+  const finish = () => { if (done) return; done = true; shutdownCtl.endRequest(); };
+  res.on('finish', finish);
+  res.on('close',  finish);
 });
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
