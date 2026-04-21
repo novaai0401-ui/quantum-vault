@@ -28,6 +28,8 @@ import {
   MutationChain, SUITE_IDS, TOKEN_TYPES
 } from '../qv-sdk/src/index.mjs';
 
+import { loadAdminConfig, requireAdmin } from './auth.mjs';
+
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
 const HOST     = process.env.QV_HOST || '0.0.0.0';
@@ -43,6 +45,23 @@ const MK_FILE   = join(DATA_DIR, 'master.key');   // 32-byte master, 0600
 const REV_FILE  = join(DATA_DIR, 'revoked.json');
 
 mkdirSync(CHAIN_DIR, { recursive: true });
+
+// ─── Admin auth (R-4.3.11) ──────────────────────────────────────────────────
+// Fail-closed: loadAdminConfig throws unless QV_ADMIN_TOKEN,
+// QV_ADMIN_TOKEN_SHA256, or QV_ALLOW_ANON=true is set. No implicit defaults.
+const ADMIN_CFG = loadAdminConfig();
+if (ADMIN_CFG.mode === 'anon') {
+  console.warn('⚠  QV_ALLOW_ANON=true — admin endpoints are UNAUTHENTICATED. Local dev only.');
+} else {
+  console.log(`✔ Admin auth: ${ADMIN_CFG.mode} mode`);
+}
+// Temporary audit sink until R-4.3.6 lands the structured JSONL log.
+function onAuthEvent(req, verdict) {
+  if (verdict.reason === 'ok' || verdict.reason === 'anon') return;
+  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '?').toString().split(',')[0].trim();
+  console.warn(`auth.deny ${verdict.reason} ip=${ip} path=${req.url}`);
+}
+const admin = (handler) => requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent });
 
 // ─── Master key (seals all signing keys at rest) ────────────────────────────
 // Generated once on first boot. Chmod 0600. If deleted, all sealed signing
@@ -293,7 +312,7 @@ route('GET', '/v3/spec', (_req, res) => {
   });
 });
 
-route('POST', '/v3/keygen', async (req, res) => {
+route('POST', '/v3/keygen', admin(async (req, res) => {
   const body = await readJson(req).catch(e => ({ _err: e.message }));
   if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
   const kp    = generateKeypair();
@@ -311,9 +330,9 @@ route('POST', '/v3/keygen', async (req, res) => {
     signingKeyLen: kp.signingKey.length, verifyingKeyLen: kp.verifyingKey.length,
     algorithm: 'ML-DSA-87', createdAt: new Date().toISOString(),
   });
-});
+}));
 
-route('POST', '/v3/token/issue', async (req, res) => {
+route('POST', '/v3/token/issue', admin(async (req, res) => {
   const body = await readJson(req).catch(e => ({ _err: e.message }));
   if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
   const { keyId, claims, ttl = 3600, suite = 'dilithium5', tokenType = 'access' } = body;
@@ -341,7 +360,7 @@ route('POST', '/v3/token/issue', async (req, res) => {
       mutationCtr: Number(chain.counter), suite, tokenType,
     });
   } catch (e) { err(res, 500, 'ISSUE_FAILED', e.message); }
-});
+}));
 
 route('POST', '/v3/token/verify', async (req, res) => {
   const body = await readJson(req).catch(e => ({ _err: e.message }));
@@ -498,14 +517,14 @@ route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, (_req, res, m) => {
   res.end(Buffer.from(v.verifyingKey));
 });
 
-route('DELETE', /^\/v3\/keys\/([^/]+)$/, (_req, res, m) => {
+route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   if (!keystore.has(keyId)) return err(res, 404, 'KEY_NOT_FOUND', keyId);
   if (revoked.has(keyId))    return err(res, 409, 'ALREADY_REVOKED', keyId);
   revoked.add(keyId);
   saveRevoked();
   json(res, 200, { keyId, revoked: true, revokedAt: new Date().toISOString() });
-});
+}));
 
 route('GET', '/v3/revoked', (_req, res) => {
   json(res, 200, { revoked: [...revoked], count: revoked.size });

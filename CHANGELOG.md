@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/)
 
 _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-weeks)._
 
+### Added
+
+- **Admin bearer-token auth on mutating endpoints** ([R-4.3.11], #29). `POST
+  /v3/keygen`, `POST /v3/token/issue`, and `DELETE /v3/keys/:id` now require
+  `Authorization: Bearer <token>`. Two modes via env:
+  - `QV_ADMIN_TOKEN=<32+ chars>` — plaintext, dev/small deploys.
+  - `QV_ADMIN_TOKEN_SHA256=<sha256 hex>` — recommended, token never in env.
+  - `QV_ALLOW_ANON=true` — explicit opt-in for local dev.
+  The server **refuses to start** without one of these set. Comparisons are
+  constant-time (`timingSafeEqual` over SHA-256 digests); no_token and
+  bad_token responses are byte-identical. Zero npm deps added.
+- Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
+  `QV_ADMIN_TOKEN_SHA256`.
+- Test suite: 33 tests (24 unit + 9 integration) under
+  `qv-server/test/`. Run with `npm test`.
+
 ---
 
 ## [4.2.0] — 2026-04-20
