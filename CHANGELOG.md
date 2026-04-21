@@ -13,6 +13,23 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Security headers + CORS lockdown** ([R-4.3.12], #30). Every response now
+  carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`,
+  `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`,
+  `Cross-Origin-Resource-Policy: same-origin`,
+  `Cross-Origin-Opener-Policy: same-origin`,
+  `X-Permitted-Cross-Domain-Policies: none`, and — by default —
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains`. The
+  server actively strips `Server` and `X-Powered-By` so neither Node nor
+  our framework surface leaks. HSTS tunable via `QV_HSTS_ENABLED`,
+  `QV_HSTS_MAX_AGE` (0..63072000), `QV_HSTS_INCLUDE_SUBDOMAINS`,
+  `QV_HSTS_PRELOAD`. CORS is off by default; enable with
+  `QV_CORS_ORIGINS="https://a.example,https://b.example"` (whitelist,
+  echo on match, `Vary: Origin`) or legacy `QV_CORS_ORIGIN="*"` for
+  open mode. Wildcard combined with `QV_CORS_ALLOW_CREDENTIALS=true`
+  is rejected at startup (browsers block it anyway). 25 new tests (18
+  unit + 7 integration).
 - **Per-IP rate limiting + body-size caps** ([R-4.3.9], #9). Token-bucket
   limiter keyed on `X-Forwarded-For` last hop (falls back to
   `socket.remoteAddress`). Four independent buckets — `public`, `verify`,
@@ -37,7 +54,7 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
   bad_token responses are byte-identical. Zero npm deps added.
 - Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
   `QV_ADMIN_TOKEN_SHA256`.
-- Test suite: 33 tests (24 unit + 9 integration) under
+- Test suite: 87 tests (66 unit + 21 integration) under
   `qv-server/test/`. Run with `npm test`.
 
 ---

@@ -33,14 +33,19 @@ import {
   loadRateLimitConfig, createLimiter, rateLimit,
   readJsonBounded, extractClientIp,
 } from './ratelimit.mjs';
+import {
+  loadSecurityConfig, applySecurityHeaders,
+  loadCorsConfig,     applyCors as applyCorsHeaders,
+} from './security.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
 const HOST     = process.env.QV_HOST || '0.0.0.0';
-// CORS: permissive by default in local dev, caller-supplied in prod.
-// Set QV_CORS_ORIGIN to a specific origin (or "*") to enable browser access
-// from the docs site. Empty = no CORS headers at all.
-const CORS_ORIGIN = process.env.QV_CORS_ORIGIN || '';
+// Security headers + CORS are now loaded via dedicated modules. See
+// security.mjs. CORS defaults to OFF (no headers) unless QV_CORS_ORIGIN(S) is
+// set — browsers block cross-origin by default, which is what we want.
+const SEC_CFG  = loadSecurityConfig();
+const CORS_CFG = loadCorsConfig();
 const DATA_DIR = process.env.QV_DATA_DIR
   ?? join(dirname(fileURLToPath(import.meta.url)), 'qv-data');
 const CHAIN_DIR = join(DATA_DIR, 'chains');
@@ -297,12 +302,12 @@ function route(method, pattern, handler) { routes.push({ method, pattern, handle
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
+  // Do NOT hardcode CORS here: the dispatcher applied applyCors() already,
+  // and security headers were emitted by applySecurityHeaders(). writeHead
+  // would override setHeader() calls if we duplicated them.
   res.writeHead(status, {
-    'content-type':                'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods':'GET, POST, OPTIONS',
-    'access-control-allow-headers':'content-type, authorization',
-    'content-length':              Buffer.byteLength(payload),
+    'content-type':   'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
   });
   res.end(payload);
 }
@@ -544,10 +549,9 @@ route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, publicRL((_req, res, m) => {
   const v = keystore.get(keyId);
   if (!v) return err(res, 404, 'KEY_NOT_FOUND', keyId);
   res.writeHead(200, {
-    'content-type':                'application/octet-stream',
-    'content-length':              v.verifyingKey.length,
-    'access-control-allow-origin': '*',
-    'cache-control':               'public, max-age=3600',
+    'content-type':   'application/octet-stream',
+    'content-length': v.verifyingKey.length,
+    'cache-control':  'public, max-age=3600',
   });
   res.end(Buffer.from(v.verifyingKey));
 }));
@@ -566,20 +570,20 @@ route('GET', '/v3/revoked', publicRL((_req, res) => {
 }));
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────
-function applyCors(res) {
-  if (!CORS_ORIGIN) return;
-  res.setHeader('access-control-allow-origin',  CORS_ORIGIN);
-  res.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('access-control-allow-headers', 'content-type, authorization');
-  res.setHeader('vary', 'origin');
-}
-
 const server = createServer(async (req, res) => {
-  applyCors(res);
+  // 1. Security headers (HSTS, CSP, X-Frame-Options, etc.) on every response.
+  applySecurityHeaders(res, SEC_CFG);
+
+  // 2. CORS: returns true if a preflight OPTIONS was terminated by the CORS
+  //    layer itself. Otherwise falls through to routing.
+  if (applyCorsHeaders(req, res, CORS_CFG)) return;
+
+  // 3. Unrecognised OPTIONS (no CORS origin or no match) — 204 with no body.
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
   }
+
   const url = new URL(req.url, `http://${req.headers.host}`);
   let matched = null, matchResult = null;
   for (const r of routes) {
@@ -605,7 +609,7 @@ server.listen(PORT, HOST, () => {
   console.log(`║  http://${HOST}:${String(PORT).padEnd(5)}                     ║`);
   console.log(`║  Zero npm deps · Node stdlib only         ║`);
   console.log(`║  Data dir: ${DATA_DIR.slice(-28).padEnd(30)}  ║`);
-  if (CORS_ORIGIN) console.log(`║  CORS: ${CORS_ORIGIN.padEnd(34)}  ║`);
+  if (CORS_CFG.mode !== 'off') console.log(`║  CORS: ${CORS_CFG.mode.padEnd(34)}  ║`);
   console.log(`╚════════════════════════════════════════════╝\n`);
 });
 
