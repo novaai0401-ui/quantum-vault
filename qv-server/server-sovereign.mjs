@@ -28,7 +28,11 @@ import {
   MutationChain, SUITE_IDS, TOKEN_TYPES
 } from '../qv-sdk/src/index.mjs';
 
-import { loadAdminConfig, requireAdmin } from './auth.mjs';
+import { loadAdminConfig, requireAdmin }       from './auth.mjs';
+import {
+  loadRateLimitConfig, createLimiter, rateLimit,
+  readJsonBounded, extractClientIp,
+} from './ratelimit.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -55,13 +59,38 @@ if (ADMIN_CFG.mode === 'anon') {
 } else {
   console.log(`✔ Admin auth: ${ADMIN_CFG.mode} mode`);
 }
+
+// ─── Rate limiting + body-size caps (R-4.3.9) ───────────────────────────────
+const RATE_CFG = loadRateLimitConfig();
+const limiter  = createLimiter(RATE_CFG);
+// Sweep idle IPs every 5 minutes to keep memory bounded. unref so we don't
+// block shutdown.
+const _sweepTimer = setInterval(() => limiter.sweep(), 5 * 60 * 1000);
+if (_sweepTimer.unref) _sweepTimer.unref();
+if (RATE_CFG.disabled) {
+  console.warn('⚠  QV_RATE_LIMIT_DISABLED=true — rate limiting is OFF. Use only behind a trusted mesh.');
+} else {
+  console.log(`✔ Rate limits (per-IP rpm): public=${RATE_CFG.rpm.public} verify=${RATE_CFG.rpm.verify} admin=${RATE_CFG.rpm.admin} authFail=${RATE_CFG.rpm.authFail}; body ≤ ${RATE_CFG.maxBodyBytes}B, claims ≤ ${RATE_CFG.maxClaimsBytes}B`);
+}
+
 // Temporary audit sink until R-4.3.6 lands the structured JSONL log.
 function onAuthEvent(req, verdict) {
   if (verdict.reason === 'ok' || verdict.reason === 'anon') return;
-  const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '?').toString().split(',')[0].trim();
-  console.warn(`auth.deny ${verdict.reason} ip=${ip} path=${req.url}`);
+  // Count against the auth-fail bucket. If the bucket is drained, future
+  // admin requests from this IP will 429 even with the right token — an
+  // attacker cannot abuse that to lock out a legitimate admin as long as
+  // the admin's IP is different (typical). Operators who must share an IP
+  // can raise QV_RATE_AUTHFAIL_RPM or disable via QV_RATE_LIMIT_DISABLED.
+  const ip  = extractClientIp(req);
+  const af  = limiter.recordAuthFail(ip);
+  console.warn(`auth.deny ${verdict.reason} ip=${ip} path=${req.url} authFailRemaining=${af.remaining}`);
 }
-const admin = (handler) => requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent });
+const admin = (handler) => rateLimit(
+  requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent }),
+  limiter, 'admin',
+);
+const publicRL = (handler) => rateLimit(handler, limiter, 'public');
+const verifyRL = (handler) => rateLimit(handler, limiter, 'verify');
 
 // ─── Master key (seals all signing keys at rest) ────────────────────────────
 // Generated once on first boot. Chmod 0600. If deleted, all sealed signing
@@ -279,28 +308,27 @@ function json(res, status, body) {
 }
 function err(res, status, code, message) { json(res, status, { error: { code, message } }); }
 
-async function readJson(req) {
-  const chunks = [];
-  let total = 0;
-  for await (const c of req) {
-    total += c.length;
-    if (total > 2 * 1024 * 1024) throw new Error('BODY_TOO_LARGE');
-    chunks.push(c);
-  }
-  if (!total) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-  catch { throw new Error('INVALID_JSON'); }
+// Delegate to readJsonBounded (enforces QV_MAX_BODY_BYTES) and uniformly
+// surface errors with HTTP status codes attached.
+async function readJson(req, max = RATE_CFG.maxBodyBytes) {
+  return readJsonBounded(req, max);
+}
+// Helper: convert a readJson error to a response.
+function respondBodyError(res, e) {
+  const status = e.status || 400;
+  const code   = e.message || 'BAD_REQUEST';
+  return err(res, status, code, code === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
-route('GET', '/v3/health', (_req, res) => {
+route('GET', '/v3/health', publicRL((_req, res) => {
   json(res, 200, {
     status: 'ok', version: '4.0.0-alpha', algorithm: 'ML-DSA-87 (NIST FIPS 204)',
     sovereign: true, dependencies: 'zero-npm', keysLoaded: keystore.size,
   });
-});
+}));
 
-route('GET', '/v3/spec', (_req, res) => {
+route('GET', '/v3/spec', publicRL((_req, res) => {
   json(res, 200, {
     name: 'QuantumVault', version: '4.0.0-alpha',
     signature: 'ML-DSA-87 (FIPS 204)', kem: 'ML-KEM-1024 (FIPS 203)',
@@ -310,11 +338,11 @@ route('GET', '/v3/spec', (_req, res) => {
     tokenTypes: { '0x01': 'Access', '0x02': 'Refresh', '0x03': 'Service' },
     sovereign: { npmDeps: 0, runtime: 'Node.js stdlib only', persistent: true },
   });
-});
+}));
 
 route('POST', '/v3/keygen', admin(async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const kp    = generateKeypair();
   const keyId = randomUUID();
   keystore.set(keyId, {
@@ -333,11 +361,18 @@ route('POST', '/v3/keygen', admin(async (req, res) => {
 }));
 
 route('POST', '/v3/token/issue', admin(async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const { keyId, claims, ttl = 3600, suite = 'dilithium5', tokenType = 'access' } = body;
   if (!keyId)  return err(res, 400, 'MISSING_KEY_ID', 'keyId required');
   if (!claims) return err(res, 400, 'MISSING_CLAIMS', 'claims required');
+  // Bound the serialised claims size BEFORE we do any signing work.
+  try {
+    const claimsLen = Buffer.byteLength(JSON.stringify(claims), 'utf8');
+    if (claimsLen > RATE_CFG.maxClaimsBytes) {
+      return err(res, 413, 'CLAIMS_TOO_LARGE', `claims exceed ${RATE_CFG.maxClaimsBytes} bytes`);
+    }
+  } catch { return err(res, 400, 'INVALID_CLAIMS', 'claims must be JSON-serialisable'); }
   if (revoked.has(keyId)) return err(res, 410, 'KEY_REVOKED', `keyId ${keyId} is revoked`);
   const entry = keystore.get(keyId);
   if (!entry)  return err(res, 404, 'KEY_NOT_FOUND', keyId);
@@ -362,9 +397,9 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
   } catch (e) { err(res, 500, 'ISSUE_FAILED', e.message); }
 }));
 
-route('POST', '/v3/token/verify', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/verify', verifyRL(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const { keyId, token } = body;
   if (!keyId) return err(res, 400, 'MISSING_KEY_ID', 'keyId required');
   if (!token) return err(res, 400, 'MISSING_TOKEN',  'token required');
@@ -393,7 +428,7 @@ route('POST', '/v3/token/verify', async (req, res) => {
     res.writeHead(401, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ valid: false, error: { code: e.message } }));
   }
-});
+}));
 
 // ─── POST /v3/token/batch-verify ────────────────────────────────────────────
 // Body: { items: [ { keyId, token }, ... ] }  (max 256 per request)
@@ -405,9 +440,9 @@ route('POST', '/v3/token/verify', async (req, res) => {
 // round-trips — the big win for most real-world batch workloads.
 // When we swap in the native qv.dll backend, Promise.all dispatches to a
 // worker_threads pool and becomes true N-core parallel.
-route('POST', '/v3/token/batch-verify', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/batch-verify', verifyRL(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const items = body.items;
   if (!Array.isArray(items))       return err(res, 400, 'MISSING_ITEMS',  'items[] required');
   if (items.length === 0)          return err(res, 400, 'EMPTY_BATCH',   'items[] must be non-empty');
@@ -465,21 +500,21 @@ route('POST', '/v3/token/batch-verify', async (req, res) => {
                throughput: Number((results.length / (durationMs/1000)).toFixed(0)),
                workers: verifyPool ? verifyPool.size : 0 },
   });
-});
+}));
 
-route('POST', '/v3/token/inspect', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/inspect', verifyRL(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const { token } = body;
   if (!token) return err(res, 400, 'MISSING_TOKEN', 'token required');
   try {
     const tokenBytes = /^[0-9a-f]+$/i.test(token) ? hex2u8(token) : b64ud(token);
     json(res, 200, inspectToken(tokenBytes));
   } catch (e) { err(res, 400, 'INSPECT_FAILED', e.message); }
-});
+}));
 
 // ─── Key discovery (JWKS-equivalent) ────────────────────────────────────────
-route('GET', '/v3/keys', (_req, res) => {
+route('GET', '/v3/keys', publicRL((_req, res) => {
   const list = [];
   for (const [keyId, v] of keystore.entries()) {
     list.push({
@@ -489,9 +524,9 @@ route('GET', '/v3/keys', (_req, res) => {
     });
   }
   json(res, 200, { keys: list, count: list.length });
-});
+}));
 
-route('GET', /^\/v3\/keys\/([^/]+)$/, (_req, res, m) => {
+route('GET', /^\/v3\/keys\/([^/]+)$/, publicRL((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   const v = keystore.get(keyId);
   if (!v) return err(res, 404, 'KEY_NOT_FOUND', keyId);
@@ -502,9 +537,9 @@ route('GET', /^\/v3\/keys\/([^/]+)$/, (_req, res, m) => {
     verifyingKeyHex: Buffer.from(v.verifyingKey).toString('hex'),
     verifyingKeyLen: v.verifyingKey.length,
   });
-});
+}));
 
-route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, (_req, res, m) => {
+route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, publicRL((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   const v = keystore.get(keyId);
   if (!v) return err(res, 404, 'KEY_NOT_FOUND', keyId);
@@ -515,7 +550,7 @@ route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, (_req, res, m) => {
     'cache-control':               'public, max-age=3600',
   });
   res.end(Buffer.from(v.verifyingKey));
-});
+}));
 
 route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
@@ -526,9 +561,9 @@ route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((_req, res, m) => {
   json(res, 200, { keyId, revoked: true, revokedAt: new Date().toISOString() });
 }));
 
-route('GET', '/v3/revoked', (_req, res) => {
+route('GET', '/v3/revoked', publicRL((_req, res) => {
   json(res, 200, { revoked: [...revoked], count: revoked.size });
-});
+}));
 
 // ─── Dispatcher ─────────────────────────────────────────────────────────────
 function applyCors(res) {

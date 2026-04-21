@@ -13,6 +13,19 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Per-IP rate limiting + body-size caps** ([R-4.3.9], #9). Token-bucket
+  limiter keyed on `X-Forwarded-For` last hop (falls back to
+  `socket.remoteAddress`). Four independent buckets — `public`, `verify`,
+  `admin`, and `authFail` (separate so bearer brute-force can't exhaust
+  the legit admin budget). All RPMs tunable via env:
+  `QV_RATE_PUBLIC_RPM` (600), `QV_RATE_VERIFY_RPM` (120),
+  `QV_RATE_ADMIN_RPM` (60), `QV_RATE_AUTHFAIL_RPM` (10).
+  Set `QV_RATE_LIMIT_DISABLED=true` behind a trusted mesh.
+  Responses carry `X-RateLimit-Limit`/`-Remaining`/`-Reset`; 429 includes
+  `Retry-After`. Memory is bounded: 5-min idle sweep + hard cap
+  `QV_RATE_MAX_IPS` (100k). Body cap `QV_MAX_BODY_BYTES` (64 KiB default)
+  enforced before JSON parse → 413; claims cap
+  `QV_MAX_CLAIMS_BYTES` (16 KiB) enforced before signing → 413.
 - **Admin bearer-token auth on mutating endpoints** ([R-4.3.11], #29). `POST
   /v3/keygen`, `POST /v3/token/issue`, and `DELETE /v3/keys/:id` now require
   `Authorization: Bearer <token>`. Two modes via env:
