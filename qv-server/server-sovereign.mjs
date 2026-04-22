@@ -44,6 +44,7 @@ import {
 } from './audit.mjs';
 import { createShutdown } from './shutdown.mjs';
 import { createMetrics, loadMetricsConfig } from './metrics.mjs';
+import { loadClaimsConfig, validateClaims }  from './claims.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -73,8 +74,9 @@ if (ADMIN_CFG.mode === 'anon') {
 }
 
 // ─── Rate limiting + body-size caps (R-4.3.9) ───────────────────────────────
-const RATE_CFG = loadRateLimitConfig();
-const limiter  = createLimiter(RATE_CFG);
+const RATE_CFG   = loadRateLimitConfig();
+const CLAIMS_CFG = loadClaimsConfig();
+const limiter    = createLimiter(RATE_CFG);
 // Sweep idle IPs every 5 minutes to keep memory bounded. unref so we don't
 // block shutdown.
 const _sweepTimer = setInterval(() => limiter.sweep(), 5 * 60 * 1000);
@@ -425,6 +427,9 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
       return err(res, 413, 'CLAIMS_TOO_LARGE', `claims exceed ${RATE_CFG.maxClaimsBytes} bytes`);
     }
   } catch { return err(res, 400, 'INVALID_CLAIMS', 'claims must be JSON-serialisable'); }
+  // Structural caps — prevent pathological shape within the byte budget.
+  try { validateClaims(claims, CLAIMS_CFG); }
+  catch (e) { return err(res, 400, e.code || 'INVALID_CLAIMS', e.message); }
   if (revoked.has(keyId)) return err(res, 410, 'KEY_REVOKED', `keyId ${keyId} is revoked`);
   const entry = keystore.get(keyId);
   if (!entry)  return err(res, 404, 'KEY_NOT_FOUND', keyId);
