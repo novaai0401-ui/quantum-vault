@@ -20,8 +20,9 @@ import { mkdirSync, readFileSync, writeFileSync, appendFileSync,
          existsSync, unlinkSync, chmodSync }                      from 'node:fs';
 import { join, dirname }    from 'node:path';
 import { fileURLToPath }    from 'node:url';
-import { Worker }           from 'node:worker_threads';
 import { cpus }             from 'node:os';
+
+import { VerifyPool }       from './verify-pool.mjs';
 
 import {
   generateKeypair, issueToken, verifyToken, inspectToken,
@@ -97,6 +98,8 @@ const mKeys       = metrics.gauge('qv_keys_total',             { help: 'Keys loa
 const mRevoked    = metrics.gauge('qv_revoked_total',          { help: 'Revoked key ids' });
 const mInflight   = metrics.gauge('qv_inflight_requests',      { help: 'In-flight HTTP requests' });
 const mUptime     = metrics.gauge('qv_process_uptime_seconds', { help: 'Process uptime in seconds' });
+const mQueueDepth = metrics.gauge('qv_verify_queue_depth',     { help: 'Verify-pool queued jobs waiting for a worker' });
+const mQueueRejects = metrics.counter('qv_verify_queue_rejects_total', { help: 'Jobs rejected because the verify-pool queue was full' });
 if (METRICS_CFG.enabled) {
   console.log(`✔ Metrics: /v3/metrics ${METRICS_CFG.public ? '(PUBLIC — behind mesh only)' : '(admin-bearer protected)'}`);
 }
@@ -182,65 +185,15 @@ function openKey(keyId, sealedB64) {
   return new Uint8Array(Buffer.concat([dec.update(ct), dec.final()]));
 }
 
-// ─── Verify worker pool (v4.1) ──────────────────────────────────────────────
-// True N-core parallel verify via node:worker_threads. Each worker holds no
-// state — the main thread passes (tokenBytes, vk, ek, chain seed+ctr) per job.
-// Falls back to in-thread Promise.all if QV_WORKERS=0 or pool init fails.
+// ─── Verify worker pool (v4.1 + v4.3 backpressure) ──────────────────────────
+// Implementation lives in verify-pool.mjs so it can be unit-tested without
+// booting the server. See that file for the bounded-queue semantics.
 const POOL_SIZE = Math.max(0, Number(process.env.QV_WORKERS ?? Math.max(2, cpus().length - 1)));
-const WORKER_URL = new URL('./verify-worker.mjs', import.meta.url);
-
-class VerifyPool {
-  constructor(size) {
-    this.size = size;
-    this.workers = [];
-    this.idle = [];         // stack of ready workers
-    this.queue = [];        // pending jobs waiting for a worker
-    this.nextJobId = 1;
-    this.pending = new Map(); // jobId → { resolve, worker }
-  }
-  async init() {
-    for (let i = 0; i < this.size; i++) {
-      const w = new Worker(WORKER_URL);
-      await new Promise((resolve, reject) => {
-        w.once('message', (m) => m.ready ? resolve() : reject(new Error('worker not ready')));
-        w.once('error', reject);
-      });
-      w.on('message', (m) => {
-        if (m.ready) return;
-        const p = this.pending.get(m.jobId);
-        if (!p) return;
-        this.pending.delete(m.jobId);
-        p.resolve(m);
-        this._release(w);
-      });
-      w.on('error', (e) => console.error('✘ verify-worker error:', e.message));
-      this.workers.push(w);
-      this.idle.push(w);
-    }
-  }
-  _release(w) {
-    const next = this.queue.shift();
-    if (next) { this._dispatch(w, next); return; }
-    this.idle.push(w);
-  }
-  _dispatch(w, { msg, resolve }) {
-    const jobId = this.nextJobId++;
-    this.pending.set(jobId, { resolve, worker: w });
-    w.postMessage({ jobId, ...msg });
-  }
-  run(msg) {
-    return new Promise((resolve) => {
-      const w = this.idle.pop();
-      if (w) this._dispatch(w, { msg, resolve });
-      else   this.queue.push({ msg, resolve });
-    });
-  }
-  async shutdown() { await Promise.all(this.workers.map(w => w.terminate())); }
-}
+const QUEUE_MAX = Math.max(1, Number(process.env.QV_VERIFY_QUEUE_MAX ?? 1024));
 
 let verifyPool = null;
 if (POOL_SIZE > 0) {
-  verifyPool = new VerifyPool(POOL_SIZE);
+  verifyPool = new VerifyPool(POOL_SIZE, QUEUE_MAX);
   try {
     await verifyPool.init();
     console.log(`✔ Verify pool ready: ${POOL_SIZE} worker${POOL_SIZE>1?'s':''}`);
@@ -562,6 +515,18 @@ route('POST', '/v3/token/batch-verify', verifyRL(async (req, res) => {
   if (items.length === 0)          return err(res, 400, 'EMPTY_BATCH',   'items[] must be non-empty');
   if (items.length > 256)          return err(res, 400, 'BATCH_TOO_LARGE','max 256 per request');
 
+  // Back-pressure: if the verify-pool queue is near saturation and accepting
+  // this batch would push it past the bound, fail-fast with 503 so the caller
+  // retries after its own Retry-After rather than piling up pending promises.
+  if (verifyPool) {
+    const headroom = verifyPool.queueMax - verifyPool.queueDepth;
+    if (items.length > headroom + verifyPool.size) {
+      res.setHeader('retry-after', '1');
+      return err(res, 503, 'POOL_OVERLOADED',
+        `verify pool saturated (queue=${verifyPool.queueDepth}/${verifyPool.queueMax})`);
+    }
+  }
+
   const t0 = process.hrtime.bigint();
   const results = await Promise.all(items.map(async (it, index) => {
     try {
@@ -693,6 +658,12 @@ function metricsHandler(req, res) {
   mRevoked.set(revoked.size);
   mInflight.set(shutdownCtl ? shutdownCtl.inFlight : 0);
   mUptime.set(Math.round(process.uptime()));
+  if (verifyPool) {
+    mQueueDepth.set(verifyPool.queueDepth);
+    // Re-apply the cumulative rejects counter (pool owns the monotonic count).
+    mQueueRejects.inc({}, Math.max(0, verifyPool.rejects - (mQueueRejects._last || 0)));
+    mQueueRejects._last = verifyPool.rejects;
+  }
   const body = metrics.render();
   res.writeHead(200, {
     'content-type':   'text/plain; version=0.0.4; charset=utf-8',
