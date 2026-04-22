@@ -45,6 +45,7 @@ import {
 import { createShutdown } from './shutdown.mjs';
 import { createMetrics, loadMetricsConfig } from './metrics.mjs';
 import { loadClaimsConfig, validateClaims }  from './claims.mjs';
+import { loadCidrConfig, matchesAny }        from './cidr.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -142,7 +143,31 @@ function metered(category, handler) {
     return wrapped(req, res, m);
   };
 }
-const admin    = (handler) => metered('admin',   requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent }));
+// CIDR allowlist (limitation #5) — defence-in-depth on top of the bearer.
+const CIDR_CFG = loadCidrConfig();
+if (CIDR_CFG.admin.length > 0) {
+  console.log(`✔ Admin CIDR allowlist: ${CIDR_CFG.admin.length} range(s)`);
+}
+function cidrGate(list, onDeny) {
+  return (handler) => (req, res, m) => {
+    if (list.length === 0) return handler(req, res, m);
+    const ip = extractClientIp(req);
+    if (!matchesAny(ip, list)) {
+      if (onDeny) onDeny(req, ip);
+      return err(res, 403, 'IP_NOT_ALLOWED', 'caller IP is not in the admin allowlist');
+    }
+    return handler(req, res, m);
+  };
+}
+const adminCidr   = cidrGate(CIDR_CFG.admin,   (req, ip) => {
+  audit.event('auth.deny', { requestId: req.requestId, reason: 'cidr_denied', ip });
+  mAuthDenies.inc({ reason: 'cidr_denied' });
+});
+const metricsCidr = cidrGate(CIDR_CFG.metrics, (req, ip) => {
+  audit.event('auth.deny', { requestId: req.requestId, reason: 'cidr_denied', ip });
+  mAuthDenies.inc({ reason: 'cidr_denied' });
+});
+const admin    = (handler) => metered('admin',   adminCidr(requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent })));
 const publicRL = (handler) => metered('public',  handler);
 const verifyRL = (handler) => metered('verify',  handler);
 
