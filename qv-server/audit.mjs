@@ -27,7 +27,10 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { openSync, writeSync, closeSync, mkdirSync } from 'node:fs';
+import {
+  openSync, writeSync, closeSync, mkdirSync, fstatSync,
+  renameSync, unlinkSync, existsSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 
 const REQ_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -44,12 +47,26 @@ export function applyRequestId(req, res, id) {
   return id;
 }
 
+function intEnv(env, name, def, min, max) {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return def;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new Error(`${name} must be integer in [${min}, ${max}]`);
+  }
+  return n;
+}
+
 export function loadAuditConfig(env = process.env, dataDir = '.') {
   const disabled = env.QV_AUDIT_DISABLED === 'true';
   const stdout   = env.QV_AUDIT_STDOUT !== 'false';  // default on
   const fileOn   = env.QV_AUDIT_FILE   !== 'false';  // default on
   const path     = env.QV_AUDIT_LOG || `${dataDir}/audit.log`;
-  return { disabled, stdout, fileOn, path };
+  // Rotation (limitation #6b). Defaults: 64 MiB / 5 files.
+  // Set QV_AUDIT_ROTATE_BYTES=0 to disable.
+  const rotateBytes = intEnv(env, 'QV_AUDIT_ROTATE_BYTES', 64 * 1024 * 1024, 0, 10 * 1024 * 1024 * 1024);
+  const rotateKeep  = intEnv(env, 'QV_AUDIT_ROTATE_KEEP',  5, 0, 100);
+  return { disabled, stdout, fileOn, path, rotateBytes, rotateKeep };
 }
 
 /**
@@ -64,15 +81,47 @@ export function createAuditor({ config, now = () => new Date() } = {}) {
 
   let fd = null;
   let fileBroken = false;
+  let bytesWritten = 0;
+  function openLog() {
+    mkdirSync(dirname(config.path), { recursive: true });
+    fd = openSync(config.path, 'a', 0o600);
+    try { bytesWritten = fstatSync(fd).size; } catch { bytesWritten = 0; }
+  }
   if (config.fileOn) {
-    try {
-      mkdirSync(dirname(config.path), { recursive: true });
-      // O_APPEND ensures atomic append under concurrent writers on POSIX.
-      // 0o600 — the log may contain IPs and request ids. Not world-readable.
-      fd = openSync(config.path, 'a', 0o600);
-    } catch (e) {
+    try { openLog(); }
+    catch (e) {
       process.stderr.write(`[audit] could not open ${config.path}: ${e.message}\n`);
       fileBroken = true;
+    }
+  }
+
+  /**
+   * Rotate: close fd, rename audit.log → audit.log.1, .1 → .2, etc.
+   * Oldest beyond rotateKeep is unlinked. Reopen at size 0.
+   * On any failure, restore the original fd and fall through — logging
+   * always continues, even if rotation misbehaves.
+   */
+  function rotate() {
+    if (!config.rotateBytes || config.rotateBytes <= 0) return;
+    if (fd == null) return;
+    try { closeSync(fd); } catch {}
+    fd = null;
+    try {
+      for (let i = config.rotateKeep; i >= 1; i--) {
+        const src = i === 1 ? config.path : `${config.path}.${i - 1}`;
+        const dst = `${config.path}.${i}`;
+        if (existsSync(src)) {
+          // If we're past the retention window, just drop the file.
+          if (i === config.rotateKeep) {
+            try { unlinkSync(dst); } catch {}
+          }
+          try { renameSync(src, dst); } catch {}
+        }
+      }
+      openLog();
+    } catch (e) {
+      process.stderr.write(`[audit] rotation failed: ${e.message}\n`);
+      try { openLog(); } catch {}
     }
   }
 
@@ -105,8 +154,13 @@ export function createAuditor({ config, now = () => new Date() } = {}) {
     catch { line = JSON.stringify({ ts: record.ts, event: name, level: 'error', reason: 'unserializable' }) + '\n'; }
 
     if (fd != null && !fileBroken) {
-      try { writeSync(fd, line); }
-      catch (e) {
+      try {
+        writeSync(fd, line);
+        bytesWritten += Buffer.byteLength(line, 'utf8');
+        if (config.rotateBytes > 0 && bytesWritten >= config.rotateBytes) {
+          rotate();
+        }
+      } catch (e) {
         if (!fileBroken) process.stderr.write(`[audit] write failed: ${e.message}\n`);
         fileBroken = true;
       }

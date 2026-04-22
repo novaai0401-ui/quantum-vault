@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert   from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join }   from 'node:path';
 import {
@@ -168,4 +168,70 @@ test('auditor: file-open failure falls back gracefully (no throw)', () => {
   });
   a.event('x', { requestId: 'r' }); // must not throw
   a.close();
+});
+
+// ─── Rotation (limitation #6b) ──────────────────────────────────────────────
+
+test('loadAuditConfig: rotation defaults', () => {
+  const c = loadAuditConfig({}, '/d');
+  assert.equal(c.rotateBytes, 64 * 1024 * 1024);
+  assert.equal(c.rotateKeep, 5);
+});
+
+test('loadAuditConfig: rotation env overrides', () => {
+  const c = loadAuditConfig({ QV_AUDIT_ROTATE_BYTES: '1024', QV_AUDIT_ROTATE_KEEP: '3' }, '/d');
+  assert.equal(c.rotateBytes, 1024);
+  assert.equal(c.rotateKeep, 3);
+});
+
+test('auditor: rotates when file exceeds rotateBytes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qv-rot-'));
+  const path = join(dir, 'audit.log');
+  const a = createAuditor({
+    config: { disabled: false, stdout: false, fileOn: true, path,
+              rotateBytes: 200, rotateKeep: 3 },
+  });
+  // Each event serialises to ~80 bytes; 5 events should trigger at least
+  // one rotation.
+  for (let i = 0; i < 10; i++) {
+    a.event('x', { requestId: 'r', seq: i, pad: 'AAAAAAAAAAAAAAAAAAAAAAAA' });
+  }
+  a.close();
+  // audit.log.1 must exist as a result of rotation.
+  // existsSync imported below via dynamic import fallback; use sync check via readFileSync try/catch.
+  assert.ok(existsSync(`${path}.1`), 'audit.log.1 should exist after rotation');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('auditor: rotation keeps at most rotateKeep archives', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'qv-rot2-'));
+  const path = join(dir, 'audit.log');
+  const a = createAuditor({
+    config: { disabled: false, stdout: false, fileOn: true, path,
+              rotateBytes: 150, rotateKeep: 2 },
+  });
+  for (let i = 0; i < 40; i++) {
+    a.event('x', { requestId: 'r', seq: i, pad: 'B'.repeat(40) });
+  }
+  a.close();
+  assert.ok(existsSync(`${path}`),   'active log exists');
+  assert.ok(existsSync(`${path}.1`), 'rotated .1 exists');
+  assert.ok(existsSync(`${path}.2`), 'rotated .2 exists');
+  // Retention of 2 means .3 must never exist.
+  assert.ok(!existsSync(`${path}.3`), 'no .3 beyond rotateKeep');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('auditor: rotation disabled when rotateBytes=0', () => {
+  // existsSync imported below via dynamic import fallback; use sync check via readFileSync try/catch.
+  const dir = mkdtempSync(join(tmpdir(), 'qv-rot3-'));
+  const path = join(dir, 'audit.log');
+  const a = createAuditor({
+    config: { disabled: false, stdout: false, fileOn: true, path,
+              rotateBytes: 0, rotateKeep: 5 },
+  });
+  for (let i = 0; i < 100; i++) a.event('x', { requestId: 'r', seq: i, pad: 'C'.repeat(60) });
+  a.close();
+  assert.ok(!existsSync(`${path}.1`), 'no rotation should have happened');
+  rmSync(dir, { recursive: true, force: true });
 });
