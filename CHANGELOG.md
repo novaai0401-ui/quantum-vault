@@ -13,6 +13,43 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Audit log rotation** (limitation #6b). `audit.log` rotates by size so
+  long-running instances cannot fill the disk. Default 64 MiB / 5 archives
+  (`audit.log.1`…`audit.log.N`). Tunable via `QV_AUDIT_ROTATE_BYTES` (0
+  disables) and `QV_AUDIT_ROTATE_KEEP`. Rotation is best-effort — failures
+  are reported on stderr and logging continues. 5 new unit tests.
+- **W3C Trace Context propagation** (limitation #8). Every response now
+  carries a `traceparent` header so qv-server stitches into a caller's
+  distributed trace without running a tracer. Inbound `traceparent` is
+  parsed strictly (version `00` only, non-zero trace/span ids) and the
+  trace-id is inherited while qv-server emits a fresh CHILD span-id.
+  Audit events gain `traceId`, `spanId`, `parentSpanId`, and
+  `traceInherited`. Malformed headers trigger a fresh trace. `tracestate`
+  passes through when ≤512 bytes of printable ASCII. 12 unit + 4
+  integration tests.
+- **CIDR allowlist for admin + metrics** (limitation #5). Defence-in-depth
+  on top of the bearer. Calls to `/v3/keygen`, `/v3/token/issue`,
+  `DELETE /v3/keys/:id`, and `/v3/metrics` must originate from a
+  whitelisted range (`QV_ADMIN_ALLOW_CIDRS`; `QV_METRICS_ALLOW_CIDRS`
+  inherits). IPv4 + IPv6 CIDR, IPv4-in-v6, zone-id stripping. `X-Forwarded-For`
+  last hop authoritative. Denials emit
+  `qv_auth_denies_total{reason="cidr_denied"}` + `auth.deny` audit event.
+  13 unit + 4 integration tests.
+- **Claims structural limits** (limitation #11). Complements the 16 KiB
+  byte cap with per-shape caps (depth ≤ 8, keys ≤ 64, array ≤ 128,
+  string ≤ 4 096, total nodes ≤ 1 024) to reject pathological JSON before
+  signing. All tunable via `QV_CLAIMS_MAX_*`. Stable 400 error codes:
+  `CLAIMS_TOO_DEEP`, `CLAIMS_TOO_MANY_KEYS`, `CLAIMS_ARRAY_TOO_LARGE`,
+  `CLAIMS_STRING_TOO_LONG`, `CLAIMS_KEY_TOO_LONG`, `CLAIMS_BAD_NUMBER`,
+  `CLAIMS_BAD_TYPE`, `CLAIMS_TOO_MANY_NODES`, `CLAIMS_NOT_OBJECT`.
+  13 unit + 3 integration tests.
+- **Verify-pool bounded queue + backpressure** (limitation #12). VerifyPool
+  extracted into `verify-pool.mjs` for unit testability. A bounded FIFO
+  queue (`QV_VERIFY_QUEUE_MAX`, default 1024) sits in front of the worker
+  pool; when saturated, `/v3/token/batch-verify` replies
+  `503 POOL_OVERLOADED` with `Retry-After: 1`. New Prometheus series:
+  `qv_verify_queue_depth` (gauge), `qv_verify_queue_rejects_total`
+  (counter). 6 new unit tests using a mock worker.
 - **Prometheus metrics at `/v3/metrics`** ([R-4.3.5], #5). Zero-dep in-process
   exposition in Prometheus text format v0.0.4. Initial metric set:
   `qv_http_requests_total{method,path,status}`,
@@ -108,8 +145,8 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
   bad_token responses are byte-identical. Zero npm deps added.
 - Helper: `npm run mint-token` prints a fresh `QV_ADMIN_TOKEN` + matching
   `QV_ADMIN_TOKEN_SHA256`.
-- Test suite: 134 tests (96 unit + 38 integration; 1 skipped on win32) under
-  `qv-server/test/`. Run with `npm test`.
+- Test suite: 195 tests under `qv-server/test/` (1 skipped on win32).
+  Run with `npm test`.
 
 ---
 
