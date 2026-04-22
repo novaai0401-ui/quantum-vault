@@ -46,6 +46,7 @@ import { createShutdown } from './shutdown.mjs';
 import { createMetrics, loadMetricsConfig } from './metrics.mjs';
 import { loadClaimsConfig, validateClaims }  from './claims.mjs';
 import { loadCidrConfig, matchesAny }        from './cidr.mjs';
+import { applyTrace }                        from './trace.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -716,6 +717,9 @@ const server = createServer(async (req, res) => {
   // 0. Request-Id: accept from caller if safe, else mint UUID. Echoed back.
   const reqId = extractOrMintRequestId(req);
   applyRequestId(req, res, reqId);
+  // W3C Trace Context (limitation #8). Inherit traceparent if present,
+  // mint a fresh trace otherwise. Every audit event carries traceId+spanId.
+  const trace = applyTrace(req, res);
   const t0 = process.hrtime.bigint();
   res.on('finish', () => {
     const durSecs = Number(process.hrtime.bigint() - t0) / 1e9;
@@ -726,6 +730,10 @@ const server = createServer(async (req, res) => {
     audit.event('http.request', {
       level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
       requestId: reqId,
+      traceId:      trace.traceId,
+      spanId:       trace.spanId,
+      parentSpanId: trace.parentSpanId,
+      traceInherited: trace.inherited,
       ip: extractClientIp(req),
       method: req.method,
       path:   pathname,
