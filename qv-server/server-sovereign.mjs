@@ -16,14 +16,16 @@
 import { createServer }     from 'node:http';
 import { randomUUID, randomBytes, createCipheriv, createDecipheriv,
          createHash }       from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync,
-         existsSync, unlinkSync, chmodSync }                      from 'node:fs';
+import { mkdirSync, readFileSync, appendFileSync,
+         existsSync, chmodSync,
+         openSync, writeSync, fsyncSync, closeSync }              from 'node:fs';
 import { join, dirname }    from 'node:path';
 import { fileURLToPath }    from 'node:url';
 import { cpus }             from 'node:os';
 
 import { VerifyPool }       from './verify-pool.mjs';
 import { writeFileDurable, cleanupStaleTmp } from './durable.mjs';
+import { verifyAndLoadChainLog }              from './chain-log.mjs';
 
 import {
   generateKeypair, issueToken, verifyToken, inspectToken,
@@ -286,17 +288,20 @@ function loadKeystore() {
       signingKey, verifyingKey: b64d(v.vk), encryptKey,
       label: v.label, createdAt: v.createdAt,
     });
-    // Reload chain counter from append-log tail
+    // Reload chain from append-log with full cryptographic linkage check.
+    // The log's stateHash column is no longer dead weight — it must match the
+    // SHA3-ratchet derivation from the seed, or the boot fails loud. On a
+    // clean log we restore the real post-advance state (not just the seed),
+    // so future advances continue the same hash chain uninterrupted across
+    // restarts.
     const logPath = join(CHAIN_DIR, keyId + '.log');
-    let ctr = 0n;
-    if (existsSync(logPath)) {
-      const buf = readFileSync(logPath);
-      if (buf.length >= 40) {
-        const tail = buf.subarray(buf.length - 40, buf.length - 32);
-        ctr = tail.readBigUInt64BE(0);
-      }
+    const seed    = Buffer.from(encryptKey.slice(0, 32));
+    const { counter: ctr, state: restoredState, records } =
+          verifyAndLoadChainLog(logPath, seed);
+    if (records > 0) {
+      console.log(`✔ Chain for ${keyId}: verified ${records} records, counter=${ctr}`);
     }
-    chains.set(keyId, MutationChain.fromState(encryptKey.slice(0, 32), ctr));
+    chains.set(keyId, MutationChain.fromState(restoredState, ctr));
   }
   console.log(`✔ Loaded ${keystore.size} key(s) from ${KS_FILE}`);
   if (migrated > 0) {
@@ -323,11 +328,22 @@ function saveKeystore() {
   try { chmodSync(KS_FILE, 0o600); } catch {}
 }
 
+// Fsync the chain append by default. A token that returned 200 must survive
+// a power loss with its counter recorded; otherwise the counter replays after
+// restart and the in-flight token collides with the next issue. Opt out with
+// QV_CHAIN_FSYNC=0 (e.g. CI, tests, low-value environments).
+const CHAIN_FSYNC = process.env.QV_CHAIN_FSYNC !== '0';
 function appendChain(keyId, counter, stateHash) {
   const rec = Buffer.alloc(40);
   rec.writeBigUInt64BE(BigInt(counter), 0);
   Buffer.from(stateHash).copy(rec, 8);
-  appendFileSync(join(CHAIN_DIR, keyId + '.log'), rec);
+  const path = join(CHAIN_DIR, keyId + '.log');
+  if (CHAIN_FSYNC) {
+    const fd = openSync(path, 'a', 0o600);
+    try { writeSync(fd, rec); fsyncSync(fd); } finally { closeSync(fd); }
+  } else {
+    appendFileSync(path, rec);
+  }
 }
 
 // ─── Minimal HTTP framework ─────────────────────────────────────────────────

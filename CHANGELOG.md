@@ -13,6 +13,23 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Cryptographic chain-log linkage verification**. The mutation-chain
+  append-log's `stateHash` column (previously dead weight) is now verified
+  on load. `chain-log.mjs` walks every record, re-derives each state from
+  the previous via `SHA3-256(prev_state || pre_counter)`, and aborts boot
+  on any mismatch (`CHAIN_LOG_TAMPERED`), non-monotonic counter
+  (`CHAIN_LOG_NON_MONOTONIC`), or partial write (`CHAIN_LOG_CORRUPT`). The
+  reload also restores the real post-advance state — so future advances
+  continue the same hash chain uninterrupted across restarts (previously
+  the chain silently re-seeded, so post-restart stateHashes would not link
+  to pre-restart ones). 8 new unit tests.
+- **Chain-log fsync on every issue** (durability of mutation counter). A
+  token that returned 200 now has its chain record on disk before the
+  response leaves the socket. Prevents counter-collision after SIGKILL /
+  power-loss. Opt-out via `QV_CHAIN_FSYNC=0` for test environments.
+- **Durability integration tests** (SIGKILL survival). 3 new tests boot a
+  real server, issue/revoke, `SIGKILL` it, and prove the on-disk state
+  is consistent on relaunch.
 - **Durable writes for master.key, keystore.json, revoked.json** (limitation #4,
   R-4.3.4). New `durable.mjs` module: write to `<path>.tmp`, `fsyncSync`
   the data, atomic `renameSync`, `fsyncSync` the directory (POSIX). A
