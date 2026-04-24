@@ -23,6 +23,7 @@ import { fileURLToPath }    from 'node:url';
 import { cpus }             from 'node:os';
 
 import { VerifyPool }       from './verify-pool.mjs';
+import { writeFileDurable, cleanupStaleTmp } from './durable.mjs';
 
 import {
   generateKeypair, issueToken, verifyToken, inspectToken,
@@ -185,7 +186,8 @@ function loadOrCreateMasterKey() {
   }
   if (existsSync(MK_FILE)) return readFileSync(MK_FILE);
   const mk = randomBytes(32);
-  writeFileSync(MK_FILE, mk, { mode: 0o600 });
+  cleanupStaleTmp(MK_FILE);
+  writeFileDurable(MK_FILE, mk, { mode: 0o600 });
   try { chmodSync(MK_FILE, 0o600); } catch {}
   console.log(`✔ Generated new master key at ${MK_FILE} (chmod 0600)`);
   return mk;
@@ -234,11 +236,16 @@ if (POOL_SIZE > 0) {
 // ─── Revocation list ────────────────────────────────────────────────────────
 const revoked = new Set();
 function loadRevoked() {
+  // If a prior crash left `revoked.json.tmp` behind, it's incomplete bytes;
+  // never promote it — just clean up. The last durable revoked.json wins.
+  cleanupStaleTmp(REV_FILE);
   if (!existsSync(REV_FILE)) return;
   for (const id of JSON.parse(readFileSync(REV_FILE, 'utf8'))) revoked.add(id);
 }
 function saveRevoked() {
-  writeFileSync(REV_FILE, JSON.stringify([...revoked], null, 2), { mode: 0o600 });
+  // Durable: fsync data + atomic rename + fsync dir. A revocation that returns
+  // 200 has survived a power-loss.
+  writeFileDurable(REV_FILE, JSON.stringify([...revoked], null, 2), { mode: 0o600 });
 }
 
 // ─── Persistent keystore (plain JSON — signing keys base64-encoded) ─────────
@@ -254,6 +261,7 @@ function b64ud(s) { return new Uint8Array(Buffer.from(s, 'base64url')); }
 function hex2u8(h){ return new Uint8Array(Buffer.from(h, 'hex')); }
 
 function loadKeystore() {
+  cleanupStaleTmp(KS_FILE);
   if (!existsSync(KS_FILE)) return;
   const raw = JSON.parse(readFileSync(KS_FILE, 'utf8'));
   let migrated = 0;
@@ -309,7 +317,9 @@ function saveKeystore() {
       createdAt:  v.createdAt,
     };
   }
-  writeFileSync(KS_FILE, JSON.stringify(obj, null, 2), { mode: 0o600 });
+  // Durable: crash between keygen and keystore write would otherwise leak
+  // a chain entry without its key material. Atomic rename + fsync closes that.
+  writeFileDurable(KS_FILE, JSON.stringify(obj, null, 2), { mode: 0o600 });
   try { chmodSync(KS_FILE, 0o600); } catch {}
 }
 

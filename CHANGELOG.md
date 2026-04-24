@@ -13,6 +13,13 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Durable writes for master.key, keystore.json, revoked.json** (limitation #4,
+  R-4.3.4). New `durable.mjs` module: write to `<path>.tmp`, `fsyncSync`
+  the data, atomic `renameSync`, `fsyncSync` the directory (POSIX). A
+  revocation or keygen that returns 2xx has survived a power-loss. Stale
+  `.tmp` siblings from a prior crash are cleaned on load (partial writes
+  are never promoted). On win32 the dir-fsync is skipped (unsupported);
+  NTFS rename remains atomic. 7 new unit tests.
 - **Audit log rotation** (limitation #6b). `audit.log` rotates by size so
   long-running instances cannot fill the disk. Default 64 MiB / 5 archives
   (`audit.log.1`…`audit.log.N`). Tunable via `QV_AUDIT_ROTATE_BYTES` (0
