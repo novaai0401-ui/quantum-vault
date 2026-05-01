@@ -27,6 +27,7 @@ import { VerifyPool }       from './verify-pool.mjs';
 import { writeFileDurable, cleanupStaleTmp } from './durable.mjs';
 import { verifyAndLoadChainLog }              from './chain-log.mjs';
 import { loadMasterKey }                      from './master-key.mjs';
+import { acquireWriterLock }                  from './writer-lock.mjs';
 
 import {
   generateKeypair, issueToken, verifyToken, inspectToken,
@@ -68,6 +69,18 @@ const MK_FILE   = join(DATA_DIR, 'master.key');   // 32-byte master, 0600
 const REV_FILE  = join(DATA_DIR, 'revoked.json');
 
 mkdirSync(CHAIN_DIR, { recursive: true });
+
+// ─── Single-writer lock (Phase 3 / limitation #1 partial) ───────────────────
+// Refuse to start if another live qv-server is already writing to this
+// DATA_DIR. Stale or expired leases are stolen automatically. Released on
+// graceful shutdown (see SHUTDOWN.onClose). Cross-host safety NOT guaranteed
+// — see writer-lock.mjs and ROADMAP.md v4.4 for the real coordinator.
+const WRITER_LOCK_DISABLED = process.env.QV_WRITER_LOCK_DISABLED === 'true';
+let WRITER_LOCK = null;
+if (!WRITER_LOCK_DISABLED) {
+  WRITER_LOCK = acquireWriterLock({ dataDir: DATA_DIR });
+  console.log(`✔ Writer lock acquired (fence ${WRITER_LOCK.fence}) at ${WRITER_LOCK.path}`);
+}
 
 // ─── Admin auth (R-4.3.11) ──────────────────────────────────────────────────
 // Fail-closed: loadAdminConfig throws unless QV_ADMIN_TOKEN,
@@ -820,6 +833,7 @@ shutdownCtl = createShutdown({
     },
     () => { try { audit.close(); } catch {} },
     () => { try { clearInterval(_sweepTimer); } catch {} },
+    () => { try { if (WRITER_LOCK) WRITER_LOCK.release(); } catch {} },
   ],
   timeoutMs: SHUTDOWN_TIMEOUT_MS,
   log: (msg, level = 'info') => {

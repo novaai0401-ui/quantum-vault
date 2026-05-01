@@ -13,6 +13,19 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Single-writer lock per DATA_DIR (Phase 3, partial fix for L1)**. New
+  `writer-lock.mjs` refuses to start if another live qv-server already
+  owns the data dir on the same host. Lease format
+  (`$DATA_DIR/.writer-lock`): JSON with `fence`, `holderId`, `pid`,
+  `hostname`, `acquiredAt`, `expiresAt`. Stale leases (expired, dead
+  pid, or different hostname) are stolen with `fence + 1`. Fence
+  detects the GC-pause hazard: a paused writer that resumes finds its
+  fence overtaken and aborts loud (`WRITER_LOCK_LOST`) rather than
+  continuing to write. Released on graceful shutdown. Disabled with
+  `QV_WRITER_LOCK_DISABLED=true` (only safe when you've moved chain
+  state to an external coordinator). Cross-host safety on shared
+  filesystems is NOT promised — see Chapter 19. 14 unit + 4 integration
+  tests.
 - **Pluggable `MasterKeyProvider` (Phase 2 / limitation #3)**. New
   `master-key.mjs` resolves the boot-time master key through one of
   three backends:

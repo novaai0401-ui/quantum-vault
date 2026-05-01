@@ -96,6 +96,10 @@ If you are auditing the code, read all of them.
     for AWS KMS, HashiCorp Vault, Azure Key Vault, GCP KMS, 1Password,
     and sops. Why `exec` is the universal escape hatch instead of a
     plugin API.
+19. [**The Single-Writer Lock**](./19-single-writer-lock.md) — Why two
+    qv-servers against one DATA_DIR is silent corruption, the
+    fence-token lease that makes it loud, and the cost / benefit of a
+    file-based lock vs a real coordinator (Postgres / etcd / S3).
 
 ---
 
