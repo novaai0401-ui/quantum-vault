@@ -13,6 +13,23 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Pluggable `MasterKeyProvider` (Phase 2 / limitation #3)**. New
+  `master-key.mjs` resolves the boot-time master key through one of
+  three backends:
+  - **env** — read from `QV_MASTER_KEY_HEX`,
+  - **file** — read/generate `master.key` (durable + chmod 0600),
+  - **exec** — run an operator-supplied command and treat the first
+    64-char hex run on stdout as the key. Universal escape hatch for
+    AWS KMS, HashiCorp Vault, Azure Key Vault, GCP KMS, 1Password,
+    sops, etc. — recipes in `docs/story/18-secret-managers.md`.
+  Auto mode selects env → exec → file. Explicit selection via
+  `QV_MASTER_KEY_PROVIDER`. 21 unit + 4 integration tests.
+- **Deterministic chain seed derived from encryptKey**. Fixes a latent
+  bug where `new MutationChain()` used a random per-create seed but
+  reload used `encryptKey.slice(0,32)` — so the chain's SHA3 ratchet
+  was effectively re-seeded on every restart and the log's stateHash
+  column was unverifiable. Now create + reload share the same seed
+  and Phase 1's `CHAIN_LOG_TAMPERED` check is meaningful end-to-end.
 - **Cryptographic chain-log linkage verification**. The mutation-chain
   append-log's `stateHash` column (previously dead weight) is now verified
   on load. `chain-log.mjs` walks every record, re-derives each state from

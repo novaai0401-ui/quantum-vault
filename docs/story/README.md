@@ -91,6 +91,11 @@ If you are auditing the code, read all of them.
 17. [**Testing Philosophy**](./17-testing.md) — Why we write unit +
     integration + property tests, what we specifically don't test, and
     how to add a new test without breaking the pure-stdlib invariant.
+18. [**Secret Manager Integration**](./18-secret-managers.md) — The
+    pluggable `MasterKeyProvider`: env, file, and exec backends. Recipes
+    for AWS KMS, HashiCorp Vault, Azure Key Vault, GCP KMS, 1Password,
+    and sops. Why `exec` is the universal escape hatch instead of a
+    plugin API.
 
 ---
 

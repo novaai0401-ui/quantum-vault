@@ -26,6 +26,7 @@ import { cpus }             from 'node:os';
 import { VerifyPool }       from './verify-pool.mjs';
 import { writeFileDurable, cleanupStaleTmp } from './durable.mjs';
 import { verifyAndLoadChainLog }              from './chain-log.mjs';
+import { loadMasterKey }                      from './master-key.mjs';
 
 import {
   generateKeypair, issueToken, verifyToken, inspectToken,
@@ -176,25 +177,26 @@ const publicRL = (handler) => metered('public',  handler);
 const verifyRL = (handler) => metered('verify',  handler);
 
 // ─── Master key (seals all signing keys at rest) ────────────────────────────
-// Generated once on first boot. Chmod 0600. If deleted, all sealed signing
-// keys become unrecoverable (by design — delete to rotate).
-// If you want HSM/DPAPI/keyring integration, override this with an env var
-// QV_MASTER_KEY_HEX (64 hex chars) — never logged, never persisted.
-function loadOrCreateMasterKey() {
-  if (process.env.QV_MASTER_KEY_HEX) {
-    const mk = Buffer.from(process.env.QV_MASTER_KEY_HEX, 'hex');
-    if (mk.length !== 32) throw new Error('QV_MASTER_KEY_HEX must be 32 bytes (64 hex chars)');
-    return mk;
-  }
-  if (existsSync(MK_FILE)) return readFileSync(MK_FILE);
-  const mk = randomBytes(32);
-  cleanupStaleTmp(MK_FILE);
-  writeFileDurable(MK_FILE, mk, { mode: 0o600 });
-  try { chmodSync(MK_FILE, 0o600); } catch {}
-  console.log(`✔ Generated new master key at ${MK_FILE} (chmod 0600)`);
-  return mk;
+// Resolved through master-key.mjs's MasterKeyProvider:
+//
+//   QV_MASTER_KEY_PROVIDER=env|file|exec|auto   (default: auto)
+//   QV_MASTER_KEY_HEX=<64 hex>                  (env backend)
+//   QV_MASTER_KEY_EXEC="<shell command>"        (exec backend; stdout = hex)
+//
+// `auto` (default) prefers env > exec > file. The file backend generates a
+// fresh key on miss and chmod 0600s it. If the file is deleted, all sealed
+// signing keys become unrecoverable — by design (delete to rotate).
+//
+// The exec backend is the universal escape hatch for KMS / Vault / Azure KV /
+// 1Password / sops — write a 5-line wrapper that prints the key on stdout.
+// See docs/story/19-secret-managers.md for recipes.
+const _mk = loadMasterKey({ filePath: MK_FILE, env: process.env });
+if (_mk.generated) {
+  console.log(`✔ Generated new master key at ${_mk.path} (chmod 0600)`);
+} else {
+  console.log(`✔ Master key loaded from ${_mk.source}${_mk.path ? ` (${_mk.path})` : ''}`);
 }
-const MASTER_KEY = loadOrCreateMasterKey();
+const MASTER_KEY = _mk.key;
 
 // AES-256-GCM envelope: [12B iv | 16B tag | N B ciphertext].
 // Per-key 96-bit IV is random; AAD binds the wrap to the keyId to stop swap attacks.
@@ -451,7 +453,12 @@ route('POST', '/v3/keygen', admin(async (req, res) => {
     signingKey: kp.signingKey, verifyingKey: kp.verifyingKey,
     encryptKey: kp.encryptKey, label: body.label ?? keyId, createdAt: Date.now(),
   });
-  chains.set(keyId, new MutationChain());
+  // Seed the chain deterministically from the encrypt key so reload across
+  // restarts can verify linkage from the same starting point. Without this
+  // the seed would be random per-create, the chain log's stateHash column
+  // would be unverifiable after any restart, and the SHA3 ratchet would be
+  // effectively broken (each restart silently re-seeds).
+  chains.set(keyId, new MutationChain(kp.encryptKey.slice(0, 32)));
   saveKeystore();
   audit.event('keygen', {
     requestId: req.requestId, ip: extractClientIp(req),
