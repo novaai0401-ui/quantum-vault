@@ -13,6 +13,16 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Phase 5 conformance harness**:
+  - `qv-spec/test-vectors/harness.mjs` — zero-dep runner that loads
+    `vectors.json`, dispatches on `vector.kind`, and compares results
+    to `expect`. ~150 lines so other languages can port it
+    mechanically. Exit code 0 = pass, 1 = fail, 2 = malformed input.
+  - `qv-server/test/conformance.test.mjs` — gates the harness inside
+    the unit-test suite. Any drift between the server's behaviour and
+    the published vectors fails CI.
+  - `docs/story/21-conformance-and-licensing.md` — the licence boundary,
+    trademark strategy, and "Sigvault Verified" badge process.
 - **Phase 4 packaging artefacts**:
   - `qv-spec/openapi.yaml` — OpenAPI 3.1 spec for the `/v3/*` HTTP surface.
   - `qv-spec/wire-format.md` — byte-level token layout (so any-language
