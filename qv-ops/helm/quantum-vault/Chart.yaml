@@ -1,0 +1,23 @@
+apiVersion: v2
+name: quantum-vault
+description: Self-hosted post-quantum token issuer/verifier (qv-server)
+type: application
+version: 0.1.0
+appVersion: "4.3.0"
+keywords:
+  - post-quantum
+  - jwt-replacement
+  - identity
+  - tokens
+  - security
+home: https://github.com/007krcs/quantum-vault
+sources:
+  - https://github.com/007krcs/quantum-vault
+maintainers:
+  - name: 007krcs
+icon: https://raw.githubusercontent.com/007krcs/quantum-vault/main/docs/logo.png
+annotations:
+  artifacthub.io/license: BUSL-1.1
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial Helm chart

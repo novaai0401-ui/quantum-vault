@@ -1,0 +1,410 @@
+openapi: 3.1.0
+info:
+  title: QuantumVault Sovereign API
+  version: 4.3.0
+  summary: Post-quantum token issuer/verifier — REST surface
+  description: |
+    QuantumVault is a self-hosted, post-quantum, replay-proof token
+    issuer and verifier. This document is the **public contract** for
+    integrating with `qv-server`. Any SDK that produces or consumes
+    tokens via this surface MUST conform to the schemas defined here.
+
+    See `qv-spec/wire-format.md` for the binary token layout, and
+    `qv-spec/test-vectors/` for cross-language conformance vectors.
+
+    ## Authentication
+    - Public verification endpoints — none (rate-limited per IP).
+    - Mutating endpoints (`/v3/keygen`, `/v3/token/issue`, `DELETE
+      /v3/keys/:id`) — `Authorization: Bearer <admin-token>` whose
+      SHA-256 matches `QV_ADMIN_TOKEN_SHA256`. CIDR allowlist optional.
+    - `/v3/metrics` — admin bearer.
+
+    ## Tracing
+    All endpoints accept and emit `traceparent` (W3C Trace Context).
+  license:
+    name: BUSL-1.1 with Additional Use Grant (TBD on v4.3.0 release)
+servers:
+  - url: http://127.0.0.1:7433
+    description: Local default
+  - url: https://vault.example.com
+    description: TLS-terminated production
+tags:
+  - name: health
+  - name: keys
+  - name: token
+  - name: ops
+
+paths:
+  /v3/live:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: 200 if the process is up. Never 503. K8s liveness target.
+      responses:
+        '200': { description: alive, content: { application/json: { schema: { $ref: '#/components/schemas/Live' } } } }
+
+  /v3/ready:
+    get:
+      tags: [health]
+      summary: Readiness probe
+      description: |
+        200 if keystore + chain log + verify pool are loaded and the
+        writer lock is held. 503 otherwise. K8s readiness target.
+      responses:
+        '200': { description: ready, content: { application/json: { schema: { $ref: '#/components/schemas/Ready' } } } }
+        '503': { description: not ready, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /v3/health:
+    get:
+      tags: [health]
+      summary: Combined health
+      responses:
+        '200': { description: healthy }
+
+  /v3/spec:
+    get:
+      tags: [ops]
+      summary: Suite/version registry
+      responses:
+        '200':
+          description: spec
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Spec' }
+
+  /v3/keygen:
+    post:
+      tags: [keys]
+      summary: Provision a new ML-DSA-87 key (admin)
+      security: [{ adminBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string, maxLength: 256 }
+      responses:
+        '201':
+          description: created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyInfo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v3/keys:
+    get:
+      tags: [keys]
+      summary: List active keys
+      responses:
+        '200':
+          description: list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys: { type: array, items: { $ref: '#/components/schemas/KeyInfo' } }
+                  count: { type: integer }
+
+  /v3/keys/{keyId}:
+    parameters:
+      - in: path
+        name: keyId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [keys]
+      summary: Inspect one key
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/KeyInfo' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [keys]
+      summary: Revoke a key (admin, durable)
+      security: [{ adminBearer: [] }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keyId:     { type: string }
+                  revoked:   { type: boolean, const: true }
+                  revokedAt: { type: string, format: date-time }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: already revoked
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /v3/keys/{keyId}/vk.bin:
+    parameters:
+      - in: path
+        name: keyId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [keys]
+      summary: Raw 2592-byte verifying key (binary)
+      responses:
+        '200':
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v3/token/issue:
+    post:
+      tags: [token]
+      summary: Issue a new post-quantum token (admin)
+      security: [{ adminBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueReq' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/IssueResp' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410':
+          description: key revoked
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '413':
+          description: claims too large
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: verify pool overloaded
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /v3/token/verify:
+    post:
+      tags: [token]
+      summary: Verify a token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyReq' }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/VerifyResp' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '410':
+          description: key revoked
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '422':
+          description: token failed cryptographic verification
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v3/token/batch-verify:
+    post:
+      tags: [token]
+      summary: Verify N tokens in one round-trip (≤256)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tokens]
+              properties:
+                tokens:
+                  type: array
+                  maxItems: 256
+                  items: { $ref: '#/components/schemas/VerifyReq' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: '#/components/schemas/BatchResult' }
+
+  /v3/token/inspect:
+    post:
+      tags: [token]
+      summary: Decode a token without verifying
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/InspectResp' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v3/revoked:
+    get:
+      tags: [keys]
+      summary: List revoked key ids
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: array, items: { type: string, format: uuid } }
+                  count:   { type: integer }
+
+  /v3/metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus metrics scrape
+      security: [{ adminBearer: [] }]
+      responses:
+        '200':
+          content:
+            text/plain:
+              schema: { type: string, description: Prometheus 0.0.4 text exposition }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    adminBearer:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer token whose SHA-256 (lowercase hex) equals
+        `QV_ADMIN_TOKEN_SHA256`. Mint locally with `npm run mint-token`.
+
+  schemas:
+    Live:
+      type: object
+      properties:
+        ok:        { type: boolean, const: true }
+        version:   { type: string }
+
+    Ready:
+      type: object
+      properties:
+        ok:        { type: boolean, const: true }
+        keystore:  { type: integer }
+        chains:    { type: integer }
+        version:   { type: string }
+
+    Spec:
+      type: object
+      properties:
+        version: { type: string }
+        suites:
+          type: object
+          additionalProperties: { type: string }
+
+    KeyInfo:
+      type: object
+      properties:
+        keyId:           { type: string, format: uuid }
+        label:           { type: string }
+        createdAt:       { type: integer }
+        algorithm:       { type: string, enum: [ML-DSA-87] }
+        revoked:         { type: boolean }
+        verifyingKeyB64: { type: string, description: 'base64url, 2592 bytes raw' }
+
+    IssueReq:
+      type: object
+      required: [keyId, claims]
+      properties:
+        keyId:     { type: string, format: uuid }
+        claims:    { type: object, description: 'arbitrary JSON, ≤16 KiB; bounded shape (Chapter 13)' }
+        ttl:       { type: integer, default: 3600, minimum: 1, maximum: 31536000 }
+        suite:     { type: string, enum: [dilithium5], default: dilithium5 }
+        tokenType: { type: string, enum: [access, refresh, service], default: access }
+
+    IssueResp:
+      type: object
+      properties:
+        token:        { type: string, description: 'hex-encoded raw token bytes' }
+        keyId:        { type: string }
+        suite:        { type: string }
+        tokenType:    { type: string }
+        sizeBytes:    { type: integer }
+        mutationCtr:  { type: integer }
+        issuedAt:     { type: string, format: date-time }
+        expiresAt:    { type: string, format: date-time }
+
+    VerifyReq:
+      type: object
+      required: [keyId, token]
+      properties:
+        keyId: { type: string, format: uuid }
+        token: { type: string, description: 'hex-encoded' }
+
+    VerifyResp:
+      type: object
+      properties:
+        valid:        { type: boolean }
+        keyId:        { type: string }
+        claims:       { type: object }
+        issuedAt:     { type: integer }
+        expiresAt:    { type: integer }
+        mutationCtr:  { type: integer }
+        algorithm:    { type: string }
+        revoked:      { type: boolean }
+
+    BatchResult:
+      type: object
+      properties:
+        index: { type: integer }
+        valid: { type: boolean }
+        keyId: { type: string }
+        error: { $ref: '#/components/schemas/Error' }
+
+    InspectResp:
+      type: object
+      properties:
+        keyId:       { type: string }
+        suite:       { type: string }
+        tokenType:   { type: string }
+        issuedAt:    { type: integer }
+        ttl:         { type: integer }
+        mutationCtr: { type: integer }
+        sigSizeBytes: { type: integer }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:    { type: string, description: 'stable error code (CLAIMS_TOO_DEEP, KEY_REVOKED, …)' }
+            message: { type: string }
+
+  responses:
+    BadRequest:
+      description: malformed request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: missing or invalid bearer
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: CIDR allowlist denied
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: key not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    RateLimited:
+      description: per-IP rate limit exceeded
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }

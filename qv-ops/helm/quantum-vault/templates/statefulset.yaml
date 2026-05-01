@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "qv.fullname" . }}
+  labels: {{- include "qv.labels" . | nindent 4 }}
+spec:
+  # qv-server is single-writer per DATA_DIR (Chapter 6, Chapter 19).
+  # StatefulSet preserves a stable identity per replica so each maps to
+  # its own PVC. Don't bump replicaCount above 1 unless you've wired a
+  # multi-writer ChainStore (v4.4 roadmap).
+  serviceName: {{ include "qv.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {{- include "qv.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "qv.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ div .Values.shutdownTimeoutMs 1000 | int }}
+      containers:
+        - name: qv-server
+          image: {{ include "qv.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 7433
+              protocol: TCP
+          env:
+            - name: QV_DATA_DIR
+              value: /data
+            - name: QV_HOST
+              value: 0.0.0.0
+            - name: QV_PORT
+              value: "7433"
+            - name: QV_AUDIT_STDOUT
+              value: "true"
+            - name: QV_AUDIT_ROTATE_BYTES
+              value: "{{ .Values.audit.rotateBytes }}"
+            - name: QV_AUDIT_ROTATE_KEEP
+              value: "{{ .Values.audit.rotateKeep }}"
+            - name: QV_RATE_PUBLIC_RPM
+              value: "{{ .Values.rateLimits.publicRpm }}"
+            - name: QV_RATE_VERIFY_RPM
+              value: "{{ .Values.rateLimits.verifyRpm }}"
+            - name: QV_RATE_ADMIN_RPM
+              value: "{{ .Values.rateLimits.adminRpm }}"
+            - name: QV_RATE_AUTHFAIL_RPM
+              value: "{{ .Values.rateLimits.authFailRpm }}"
+            - name: QV_SHUTDOWN_TIMEOUT_MS
+              value: "{{ .Values.shutdownTimeoutMs }}"
+            {{- if .Values.adminAllowCidrs }}
+            - name: QV_ADMIN_ALLOW_CIDRS
+              value: {{ .Values.adminAllowCidrs | quote }}
+            {{- end }}
+            {{- if .Values.metricsAllowCidrs }}
+            - name: QV_METRICS_ALLOW_CIDRS
+              value: {{ .Values.metricsAllowCidrs | quote }}
+            {{- end }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "qv.secretName" . }}
+          livenessProbe:
+            httpGet:
+              path: /v3/live
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds:       {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds:      {{ .Values.probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /v3/ready
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds:       {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds:      {{ .Values.probes.readiness.timeoutSeconds }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- else }}
+  volumeClaimTemplates: []
+  {{- end }}

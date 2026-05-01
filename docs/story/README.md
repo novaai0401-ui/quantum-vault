@@ -100,6 +100,11 @@ If you are auditing the code, read all of them.
     qv-servers against one DATA_DIR is silent corruption, the
     fence-token lease that makes it loud, and the cost / benefit of a
     file-based lock vs a real coordinator (Postgres / etcd / S3).
+20. [**The Public Contract and the Container**](./20-spec-and-packaging.md)
+    — OpenAPI 3.1, the wire-format spec, the error-code registry, the
+    reproducible Dockerfile, the Helm chart, and the SBOM that proves
+    zero deps. The artefacts that let any language and any cluster
+    integrate qv-server without reading qv-server source.
 
 ---
 

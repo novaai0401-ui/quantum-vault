@@ -13,6 +13,24 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Phase 4 packaging artefacts**:
+  - `qv-spec/openapi.yaml` — OpenAPI 3.1 spec for the `/v3/*` HTTP surface.
+  - `qv-spec/wire-format.md` — byte-level token layout (so any-language
+    SDKs can be written from this doc alone).
+  - `qv-spec/error-codes.md` — stable error-code registry. Clients
+    branch on `error.code`, never on prose.
+  - `qv-server/Dockerfile` — fixed: the prior version COPY'd only
+    server-sovereign.mjs, leaving the image broken since v4.3 added
+    13 sibling modules. New image is reproducible (pinned base,
+    explicit COPY list, non-root uid/gid 10001, runAsNonRoot,
+    readOnlyRootFilesystem-friendly).
+  - `qv-ops/helm/quantum-vault/` — minimal Helm chart (StatefulSet,
+    PVC, probes, Secret-driven env). `replicaCount=1` enforced by
+    design until v4.4 multi-writer ChainStore lands.
+  - `qv-ops/scripts/sbom.mjs` — CycloneDX 1.5 SBOM generator. Zero
+    deps. Empty `dependencies[0].dependsOn` is the load-bearing claim;
+    a unit test asserts it stays empty (any future npm install fails
+    the build).
 - **Single-writer lock per DATA_DIR (Phase 3, partial fix for L1)**. New
   `writer-lock.mjs` refuses to start if another live qv-server already
   owns the data dir on the same host. Lease format

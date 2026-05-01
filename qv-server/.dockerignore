@@ -1,4 +1,16 @@
+# Keep the build context lean — only the runtime files end up in the image.
+node_modules
+test
 qv-data
 qv-data-*
 *.log
-node_modules
+*.tmp
+.DS_Store
+.git*
+README*.md
+CHANGELOG.md
+ROADMAP.md
+docs
+package-lock.json
+bench-batch.mjs
+server.mjs
