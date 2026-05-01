@@ -176,7 +176,7 @@ actually *improvements*:
 | Express + helmet + cors + express-rate-limit | 4 | ~120 | No |
 | Fastify + @fastify/helmet + @fastify/rate-limit | 3 | ~60 | No |
 | Keycloak Node adapter | ~8 | ~220 | No |
-| **QuantumVault qv-server** | **0** | **0** | **Yes (default)** |
+| **Sigvault qv-server** | **0** | **0** | **Yes (default)** |
 
 Dependency counts are approximate and vary by version; the orders of
 magnitude are the point.

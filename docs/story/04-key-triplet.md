@@ -11,7 +11,7 @@ A single key is a single point of catastrophic failure. Crack it, leak
 it, or steal it, and every past and future token signed by it is
 forgeable *and* readable.
 
-QuantumVault uses **three** keys per identity:
+Sigvault uses **three** keys per identity:
 
 1. **Signing seed** — produces the public/private pair for ML-DSA-87
    (or Falcon-512 / Falcon-1024). Used to sign the token body.
@@ -138,7 +138,7 @@ Three independent ways to rotate:
 
 ## The comparison
 
-| Property | JWT | JWE | PASETO v4.local | **QuantumVault** |
+| Property | JWT | JWE | PASETO v4.local | **Sigvault** |
 |----------|-----|-----|-----------------|------------------|
 | Keys per identity | 1 | 1 (symmetric) or 2 (hybrid) | 1 | **3 independent** |
 | Sign/encrypt separation | N/A | No | No | **Yes** |

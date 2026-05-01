@@ -8,7 +8,7 @@ permissions tree, a tenant graph, a session history — and now you
 have a 30 KB token, CPU-expensive to sign, CPU-expensive to parse,
 and impossible to fit in a cookie.
 
-QuantumVault enforces two caps:
+Sigvault enforces two caps:
 
 1. **Byte cap** (`QV_MAX_CLAIMS_BYTES`, default 16 KiB) — at
    ratelimit.mjs, before we touch JSON.parse.
@@ -112,6 +112,6 @@ different failure modes and belong at different layers.
 | jsonwebtoken (npm) | No | No | No |
 | Auth0 | Opaque | Opaque | Custom |
 | Keycloak | Yes (token-claim-size limit) | No | No |
-| **QuantumVault** | **Yes (16 KiB)** | **Yes (9 caps)** | **Yes (9 codes)** |
+| **Sigvault** | **Yes (16 KiB)** | **Yes (9 caps)** | **Yes (9 codes)** |
 
 Next: Chapter 14, [Competitive Landscape](./14-competition.md).

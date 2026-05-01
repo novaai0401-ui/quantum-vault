@@ -217,6 +217,6 @@ request from acceptance to finalisation.
 | Express-based | Depends on middleware | Depends on logging setup |
 | Keycloak | ~15 (Java servlet filters) | Via JMX |
 | Auth0 | (opaque) | Via dashboards |
-| **QuantumVault** | **13 named stages** | **All 13, every request** |
+| **Sigvault** | **13 named stages** | **All 13, every request** |
 
 Next: Chapter 9, [Authentication, CIDR, Rate Limiting](./09-auth-cidr-rate.md).

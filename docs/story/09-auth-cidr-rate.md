@@ -209,6 +209,6 @@ Grep `auth.deny` in `audit.log` to see every rejection in order.
 | Keycloak | Yes | No built-in | Partial (per-realm) | No |
 | Vault | Yes | Yes (Enterprise) | Yes | No |
 | AWS IAM | Yes | VPC endpoint | Yes | No |
-| **QuantumVault** | **Yes (constant-time)** | **Yes (OSS)** | **Yes** | **Yes** |
+| **Sigvault** | **Yes (constant-time)** | **Yes (OSS)** | **Yes** | **Yes** |
 
 Next: Chapter 10, [Observability](./10-observability.md).

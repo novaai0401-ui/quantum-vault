@@ -1,4 +1,4 @@
-# QuantumVault v4.0 — Sovereign Edition Architecture
+# Sigvault v4.0 — Sovereign Edition Architecture
 
 > "If someone removes their support, we do not become handicapped."
 
@@ -34,7 +34,7 @@ signing policy can block us.
 3. **If RustCrypto deletes every crate tomorrow**, we keep building.
 4. **If npm removes Express tomorrow**, we keep running.
 5. **If Microsoft blocks our signed EXE tomorrow**, we ship the WASM
-   module and every app that embeds it gets QuantumVault for free.
+   module and every app that embeds it gets Sigvault for free.
 
 ## 4. Shrinking the Token
 

@@ -213,6 +213,6 @@ curl -H "Authorization: Bearer $ADMIN" http://vault/v3/metrics | \
 | Auth0 | Proprietary | Proprietary | Proprietary | N/A |
 | Keycloak | JMX (→ custom exporter) | DB-backed | Partial | No |
 | Vault | Prometheus | Text | OpenTelemetry | No |
-| **QuantumVault** | **Prometheus (built-in)** | **JSONL + rotation** | **W3C v00** | **Yes** |
+| **Sigvault** | **Prometheus (built-in)** | **JSONL + rotation** | **W3C v00** | **Yes** |
 
 Next: Chapter 11, [Verify Pool + Backpressure](./11-verify-pool.md).

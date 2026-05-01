@@ -1,5 +1,5 @@
 /**
- * QuantumVault — Admin authentication (R-4.3.11)
+ * Sigvault — Admin authentication (R-4.3.11)
  * ================================================
  * Zero npm deps — uses Node's `node:crypto` stdlib only.
  *

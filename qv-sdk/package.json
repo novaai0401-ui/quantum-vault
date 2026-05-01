@@ -1,7 +1,7 @@
 {
-  "name": "@quantumvault/sdk",
+  "name": "@sigvault/sdk",
   "version": "4.2.0",
-  "description": "QuantumVault post-quantum token SDK — ML-DSA-87 (Dilithium-5) + XChaCha20-Poly1305 + SHA3-256. Works in Node, Deno, Bun, Cloudflare Workers, and modern browsers.",
+  "description": "Sigvault post-quantum token SDK — ML-DSA-87 (Dilithium-5) + XChaCha20-Poly1305 + SHA3-256. Works in Node, Deno, Bun, Cloudflare Workers, and modern browsers.",
   "type": "module",
   "main": "./src/index.mjs",
   "module": "./src/index.mjs",
@@ -30,7 +30,7 @@
     "nist-fips-204",
     "quantum-safe"
   ],
-  "author": "QuantumVault contributors",
+  "author": "Sigvault contributors",
   "license": "Apache-2.0",
   "homepage": "https://github.com/007krcs/quantum-vault#readme",
   "bugs": {

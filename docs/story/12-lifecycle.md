@@ -8,7 +8,7 @@ service lives inside a control plane whose job is to terminate it
 regularly. A service that handles termination badly drops connections,
 serves 500s during deploys, and causes operational pain.
 
-QuantumVault handles termination explicitly in three layers:
+Sigvault handles termination explicitly in three layers:
 
 1. **Liveness** (`/v3/live`) — "is the process alive?"
 2. **Readiness** (`/v3/ready`) — "should I send traffic?"
@@ -125,6 +125,6 @@ Operators can grep `server.shutdown` to audit every termination.
 | Fastify | Yes (with hooks) | Yes | Manual |
 | Vault | Yes | Yes | Yes |
 | Keycloak | Yes | Yes | Yes |
-| **QuantumVault** | **Yes (out of box)** | **Yes (tracked)** | **Yes (30s default)** |
+| **Sigvault** | **Yes (out of box)** | **Yes (tracked)** | **Yes (30s default)** |
 
 Next: Chapter 13, [Claims Validation](./13-claims.md).

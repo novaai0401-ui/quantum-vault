@@ -3,7 +3,7 @@
 ## The story
 
 "Why not just use Auth0?" is the reasonable first question. We answer
-it here, product by product. We don't claim QuantumVault is better
+it here, product by product. We don't claim Sigvault is better
 at everything — it isn't. We claim it is **uniquely positioned** on
 four dimensions that matter for the next decade of identity:
 
@@ -135,7 +135,7 @@ KMS envelope-unwrap on boot to decrypt `master.key`. Roadmap: v4.4.
 
 ## The feature matrix
 
-| Feature | Auth0 | Vault | Keycloak | JWT | PASETO | **QuantumVault** |
+| Feature | Auth0 | Vault | Keycloak | JWT | PASETO | **Sigvault** |
 |---------|-------|-------|----------|-----|--------|------------------|
 | Post-quantum signatures | No | No | No | No | No | **Yes (ML-DSA / Falcon)** |
 | Claims AEAD-encrypted | No | N/A | No | No | Only v*.local | **Yes** |
@@ -157,10 +157,10 @@ KMS envelope-unwrap on boot to decrypt `master.key`. Roadmap: v4.4.
 - **Keycloak**: Free (self-host). TCO: ~1–2 FTE for operational
   maintenance.
 - **Vault**: Free (OSS) / $12/hour (HCP) / 6-figure enterprise.
-- **QuantumVault**: Free (OSS). TCO: significantly lower because
+- **Sigvault**: Free (OSS). TCO: significantly lower because
   single-binary, zero-dep. Roadmap includes managed-SaaS tier (v5).
 
-## When to pick QuantumVault specifically
+## When to pick Sigvault specifically
 
 - **You sign machine-to-machine tokens** at scale (IoT fleets, service
   meshes, API gateways).

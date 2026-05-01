@@ -1,5 +1,5 @@
 /**
- * QuantumVault — Security headers + CORS lockdown
+ * Sigvault — Security headers + CORS lockdown
  * ===================================================
  * Zero npm deps. Applied by the dispatcher on every response.
  *

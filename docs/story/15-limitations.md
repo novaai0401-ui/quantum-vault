@@ -75,7 +75,7 @@ span data must be reconstructed from the audit log.
 `traceId` to reconstruct spans.
 
 **Fix.** Optional OTLP exporter (would violate zero-dep; likely a
-separate subpackage `@quantumvault/otlp-bridge` that streams audit.log
+separate subpackage `@sigvault/otlp-bridge` that streams audit.log
 to a collector). ETA v4.5.
 
 ### L8 — ~~No traceparent~~ **RESOLVED v4.3**

@@ -1,5 +1,5 @@
 /**
- * QuantumVault v3.0 — Node.js / WASM-ready SDK
+ * Sigvault v3.0 — Node.js / WASM-ready SDK
  *
  * Runs on Node.js, Deno, Bun, Cloudflare Workers, and any browser that
  * supports WebCrypto + WebAssembly. Never blocked by OS AppControl because
@@ -244,7 +244,7 @@ function signedBytes(header, encPayload) {
 // ─── Issue ────────────────────────────────────────────────────────────────────
 
 /**
- * Issue a new QuantumVault token.
+ * Issue a new Sigvault token.
  *
  * @param {object} params
  * @param {Uint8Array} params.signingKeySeed   — 32-byte ML-DSA-87 seed
@@ -311,7 +311,7 @@ export function issueToken({
 // ─── Verify ───────────────────────────────────────────────────────────────────
 
 /**
- * Verify a QuantumVault token through the 7-layer pipeline.
+ * Verify a Sigvault token through the 7-layer pipeline.
  *
  * @param {object} params
  * @param {Uint8Array|string} params.token    — raw bytes or hex string

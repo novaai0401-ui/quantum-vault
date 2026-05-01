@@ -1,8 +1,8 @@
 /**
- * QuantumVault v3.0 — Universal REST API Server
+ * Sigvault v3.0 — Universal REST API Server
  *
  * Any language that can make HTTP calls (Python, Java, Go, C#, Ruby, PHP,
- * Swift, Kotlin, Rust, C, C++, R, MATLAB, …) can use QuantumVault through
+ * Swift, Kotlin, Rust, C, C++, R, MATLAB, …) can use Sigvault through
  * this server.
  *
  * Endpoints:
@@ -50,7 +50,7 @@ app.get('/v3/health', (_req, res) => {
 // ─── GET /v3/spec ─────────────────────────────────────────────────────────────
 app.get('/v3/spec', (_req, res) => {
   res.json({
-    name:      'QuantumVault',
+    name:      'Sigvault',
     version:   '3.0.0',
     signature: 'ML-DSA-87 (NIST FIPS 204) — Dilithium-5',
     kem:       'ML-KEM-1024 (NIST FIPS 203) — Kyber-1024',
@@ -233,7 +233,7 @@ app.post('/v3/token/inspect', (req, res) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n╔═══════════════════════════════════════╗`);
-  console.log(`║  QuantumVault v3.0 REST API Server    ║`);
+  console.log(`║  Sigvault v3.0 REST API Server    ║`);
   console.log(`║  http://localhost:${PORT}               ║`);
   console.log(`║  ML-DSA-87 · XChaCha20 · SHA3-256    ║`);
   console.log(`╚═══════════════════════════════════════╝\n`);

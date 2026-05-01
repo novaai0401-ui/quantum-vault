@@ -1,4 +1,4 @@
-# QuantumVault Error Code Registry
+# Sigvault Error Code Registry
 
 Every `4xx`/`5xx` response from qv-server carries a JSON envelope:
 

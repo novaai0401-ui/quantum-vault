@@ -1,4 +1,4 @@
-# The QuantumVault Storybook
+# The Sigvault Storybook
 
 > *How we built a post-quantum token server that refuses to trust npm,
 > the operating system, or even its own future selves — and why every
@@ -10,7 +10,7 @@ It is organised as a set of chapters you can read in order (like a
 novel) or jump into individually (like an encyclopaedia).
 
 If you only have five minutes, read Chapter 1.
-If you are adopting QuantumVault for a regulated workload, read
+If you are adopting Sigvault for a regulated workload, read
 Chapters 1–4 and Chapter 14.
 If you are auditing the code, read all of them.
 
@@ -32,7 +32,7 @@ If you are auditing the code, read all of them.
 
 ## Part II — The cryptographic engine
 
-4. [**The Key Triplet**](./04-key-triplet.md) — Why every QuantumVault
+4. [**The Key Triplet**](./04-key-triplet.md) — Why every Sigvault
    identity has *three* keys (sign, encrypt, tag), how they compose
    into a sealed envelope, and why this is stronger than JWT's signed
    blob or PASETO's v4.local.
@@ -76,7 +76,7 @@ If you are auditing the code, read all of them.
     the signer even sees it.
 14. [**Competitive Landscape**](./14-competition.md) — Feature-by-feature
     comparison against Auth0, Okta, HashiCorp Vault, Keycloak, AWS KMS,
-    the raw JWT ecosystem, and PASETO. What QuantumVault uniquely
+    the raw JWT ecosystem, and PASETO. What Sigvault uniquely
     offers and where the seams still show.
 15. [**The Limitations We Ship With**](./15-limitations.md) — Every
     known limitation, honestly named, with the planned fix, the workaround,

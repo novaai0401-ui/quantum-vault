@@ -2,13 +2,13 @@
 
 ## The story
 
-Up to now, "use QuantumVault" meant "read the qv-server source." That
+Up to now, "use Sigvault" meant "read the qv-server source." That
 is fine for the founder and the first ten adopters. It is not fine
 for an SDK author in Go, an enterprise security team in finance, or
 a regulator who needs to audit what you ship without trusting your
 prose.
 
-This chapter is about the artefacts that make QuantumVault
+This chapter is about the artefacts that make Sigvault
 *portable*: the OpenAPI spec, the wire-format document, the error
 code registry, the reproducible Dockerfile, the Helm chart, and the
 SBOM that proves the zero-dependency claim.
@@ -87,7 +87,7 @@ The image is intentionally boring:
 - Healthcheck on `/v3/live`.
 
 Image weight: ~60 MB. Most of that is the Node.js binary. The
-QuantumVault payload is roughly 180 KB of source.
+Sigvault payload is roughly 180 KB of source.
 
 ## The chart — `qv-ops/helm/quantum-vault/`
 
@@ -113,7 +113,7 @@ What the chart deliberately does NOT bundle:
 - An admission webhook. Same reason.
 - Network policy. Same reason.
 
-Roadmap v4.4 ships an Operator (CRD `QuantumVault`) for shops that
+Roadmap v4.4 ships an Operator (CRD `Sigvault`) for shops that
 want lifecycle automation rather than a chart.
 
 ## The SBOM — `qv-ops/scripts/sbom.mjs`
@@ -161,7 +161,7 @@ any operator: `cosign verify` + SHA-256 match.
 ## The contract, restated
 
 - **Open**: `qv-spec/` is CC BY 4.0. SDKs are Apache-2.0. Anyone can
-  build with QuantumVault without our permission.
+  build with Sigvault without our permission.
 - **Auditable**: SBOM proves zero deps. Reproducible Dockerfile
   proves the image equals the source. Cosign proves the image equals
   the publisher's intent.

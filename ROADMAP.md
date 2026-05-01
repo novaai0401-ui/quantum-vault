@@ -1,4 +1,4 @@
-# QuantumVault Roadmap
+# Sigvault Roadmap
 
 This document is the **product-owner view** of what's shipped, what's
 broken, and what's coming next. It is kept in sync with open GitHub
@@ -12,7 +12,7 @@ Last updated: **2026-04-20** (v4.2.0 shipped).
 
 Shipped across 5 registries:
 
-- **npm** — `@quantumvault/sdk`, `@quantumvault/wasm`
+- **npm** — `@sigvault/sdk`, `@sigvault/wasm`
 - **PyPI** — `quantumvault` (REST client)
 - **crates.io** — `qv-core` (ML-DSA-87 + Falcon-512/1024)
 - **GHCR** — `ghcr.io/007krcs/qv-server:4.2.0` (multi-arch)

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# QuantumVault Sovereign Server — reproducible, zero-npm container.
+# Sigvault Sovereign Server — reproducible, zero-npm container.
 #
 # Build (reproducible — pinned digest, deterministic timestamps):
 #
@@ -25,7 +25,7 @@
 ARG NODE_VERSION=20.18.1-alpine3.20
 FROM node:${NODE_VERSION} AS runtime
 
-LABEL org.opencontainers.image.title="QuantumVault Server"
+LABEL org.opencontainers.image.title="Sigvault Server"
 LABEL org.opencontainers.image.description="Post-quantum token REST server (ML-DSA-87, Falcon-512/1024) — zero npm dependencies, Node stdlib only."
 LABEL org.opencontainers.image.source="https://github.com/007krcs/quantum-vault"
 LABEL org.opencontainers.image.url="https://github.com/007krcs/quantum-vault"

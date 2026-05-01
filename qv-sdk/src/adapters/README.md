@@ -1,6 +1,6 @@
-# QuantumVault Signature Suite Adapters
+# Sigvault Signature Suite Adapters
 
-A **suite adapter** plugs a post-quantum signature algorithm into QuantumVault's
+A **suite adapter** plugs a post-quantum signature algorithm into Sigvault's
 wire format. All adapters implement the same narrow interface so the rest of
 the stack (encryption, mutation chain, verification pipeline) is algorithm-
 agnostic.

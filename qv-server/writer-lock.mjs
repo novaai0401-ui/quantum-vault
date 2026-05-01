@@ -2,7 +2,7 @@
 //
 // Why this exists
 // ----------------
-// QuantumVault's MutationChain is single-writer by design (Chapter 6). Two
+// Sigvault's MutationChain is single-writer by design (Chapter 6). Two
 // qv-server processes against the same DATA_DIR will produce false
 // MUTATION_CTR_STALE rejections, double-issue tokens at the same counter,
 // and silently corrupt the chain log. There is no in-process safeguard

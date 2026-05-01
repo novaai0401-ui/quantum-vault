@@ -1,5 +1,5 @@
 /**
- * QuantumVault — Prometheus metrics (text exposition format, v0.0.4)
+ * Sigvault — Prometheus metrics (text exposition format, v0.0.4)
  * =====================================================================
  * Zero npm deps. In-process aggregation, exposed at GET /v3/metrics.
  *

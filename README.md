@@ -1,4 +1,4 @@
-# QuantumVault
+# Sigvault
 
 > Post-quantum (ML-DSA-87, Falcon-512/1024) cryptographic tokens for every
 > ecosystem — **npm, crates.io, GitHub Releases, GHCR**. Usable from any
@@ -6,8 +6,8 @@
 
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 ![version](https://img.shields.io/badge/version-v4.2-7dd3fc.svg)
-[![npm sdk](https://img.shields.io/npm/v/@quantumvault/sdk?label=%40quantumvault%2Fsdk)](https://www.npmjs.com/package/@quantumvault/sdk)
-[![npm wasm](https://img.shields.io/npm/v/@quantumvault/wasm?label=%40quantumvault%2Fwasm)](https://www.npmjs.com/package/@quantumvault/wasm)
+[![npm sdk](https://img.shields.io/npm/v/@sigvault/sdk?label=%40quantumvault%2Fsdk)](https://www.npmjs.com/package/@sigvault/sdk)
+[![npm wasm](https://img.shields.io/npm/v/@sigvault/wasm?label=%40quantumvault%2Fwasm)](https://www.npmjs.com/package/@sigvault/wasm)
 [![crates.io](https://img.shields.io/crates/v/qv-core.svg)](https://crates.io/crates/qv-core)
 ![server npm deps](https://img.shields.io/badge/server%20npm%20deps-0-success.svg)
 ![WASM size](https://img.shields.io/badge/WASM%20size-127%20KB-success.svg)
@@ -16,10 +16,10 @@
 
 ```bash
 # JavaScript / TypeScript (Node, Deno, Bun, Cloudflare Workers)
-npm install @quantumvault/sdk
+npm install @sigvault/sdk
 
 # Browsers / edge — 127 KB wasm
-npm install @quantumvault/wasm
+npm install @sigvault/wasm
 
 # Python (REST client, zero deps)
 pip install quantumvault
@@ -42,7 +42,7 @@ curl -L https://github.com/007krcs/quantum-vault/releases/latest/download/libqv-
 import {
   generateKeypair, MutationChain,
   issueToken, verifyToken,
-} from '@quantumvault/sdk';
+} from '@sigvault/sdk';
 
 const { signingKey, verifyingKey, encryptKey } = generateKeypair();
 const chain = new MutationChain();
@@ -62,7 +62,7 @@ const { claims } = verifyToken({
 
 ## What's in v4.2
 
-- **Installable everywhere.** npm (`@quantumvault/sdk`, `@quantumvault/wasm`),
+- **Installable everywhere.** npm (`@sigvault/sdk`, `@sigvault/wasm`),
   crates.io (`qv-core`), Docker (`ghcr.io/007krcs/qv-server`), and prebuilt
   FFI binaries on GitHub Releases for 5 platforms.
 - **Falcon dispatch** in `issue_token` / `verify_token`. Falcon-512 gives you
@@ -79,8 +79,8 @@ const { claims } = verifyToken({
 ```
 qv-core/    Rust library → crates.io (qv-core)
 qv-ffi/     C ABI wrapper → GitHub Releases (libqv.{so,dylib,dll})
-qv-wasm/    WebAssembly build → npm (@quantumvault/wasm)
-qv-sdk/     JavaScript SDK → npm (@quantumvault/sdk)
+qv-wasm/    WebAssembly build → npm (@sigvault/wasm)
+qv-sdk/     JavaScript SDK → npm (@sigvault/sdk)
 qv-server/  REST server → ghcr.io/007krcs/qv-server (Dockerfile included)
 qv-cli/     Optional CLI
 qv-docs/    Vite + React + tekivex-ui docs/demo site

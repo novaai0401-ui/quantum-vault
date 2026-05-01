@@ -1,5 +1,5 @@
 /**
- * QuantumVault — Rate limiting + body-size enforcement (R-4.3.9)
+ * Sigvault — Rate limiting + body-size enforcement (R-4.3.9)
  * =================================================================
  * Zero npm deps. Pure in-memory token bucket keyed on client IP.
  *

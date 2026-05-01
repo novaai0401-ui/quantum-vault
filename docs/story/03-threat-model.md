@@ -251,7 +251,7 @@ Each layer has its own test file — see Chapter 17.
 
 ## The comparison
 
-| Threat | JWT stack | Vault | Keycloak | **QuantumVault** |
+| Threat | JWT stack | Vault | Keycloak | **Sigvault** |
 |--------|-----------|-------|----------|------------------|
 | Post-quantum sign forgery | No | No | No | **Yes (ML-DSA)** |
 | Payload confidentiality at rest | No | Partial | No | **Yes (AEAD)** |

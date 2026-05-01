@@ -1,5 +1,5 @@
 /**
- * QuantumVault — Graceful shutdown
+ * Sigvault — Graceful shutdown
  * ===================================
  * Zero npm deps. Wires SIGTERM/SIGINT into an orderly drain:
  *

@@ -1,7 +1,7 @@
 {
   "name":        "qv-server",
   "version":     "4.0.0-alpha",
-  "description": "QuantumVault Sovereign REST API — zero npm dependencies",
+  "description": "Sigvault Sovereign REST API — zero npm dependencies",
   "type":        "module",
   "main":        "server-sovereign.mjs",
   "scripts": {

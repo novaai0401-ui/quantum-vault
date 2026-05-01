@@ -1,5 +1,5 @@
 /**
- * QuantumVault — Request-ID propagation + structured JSONL audit log
+ * Sigvault — Request-ID propagation + structured JSONL audit log
  * ====================================================================
  * Zero npm deps. Safe to call on every request.
  *

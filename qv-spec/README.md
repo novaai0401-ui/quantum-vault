@@ -1,6 +1,6 @@
 # qv-spec — the public contract
 
-This directory is the **interop contract** for QuantumVault. It is
+This directory is the **interop contract** for Sigvault. It is
 intentionally small, intentionally precise, and intentionally
 licensed for maximum reuse (CC BY 4.0 from v4.3.0).
 
@@ -9,7 +9,7 @@ licensed for maximum reuse (CC BY 4.0 from v4.3.0).
 | File | What it is |
 |------|------------|
 | [`openapi.yaml`](./openapi.yaml) | OpenAPI 3.1 spec for the `/v3/*` HTTP surface. Every status code, every error envelope, every authentication mode. |
-| [`wire-format.md`](./wire-format.md) | The byte-level layout of a QuantumVault token. Read this if you're writing an SDK in any language. |
+| [`wire-format.md`](./wire-format.md) | The byte-level layout of a Sigvault token. Read this if you're writing an SDK in any language. |
 | [`error-codes.md`](./error-codes.md) | Canonical list of stable error-code strings. Clients should branch on these, never on prose messages. |
 | `test-vectors/` *(coming v4.3.0)* | Cross-language `(input, expected output)` fixtures. Pass them all, get the "QV Verified" badge. |
 
@@ -23,7 +23,7 @@ licensed for maximum reuse (CC BY 4.0 from v4.3.0).
 
 ## What you get out of conforming
 
-1. Any QuantumVault-issued token your SDK produces will verify
+1. Any Sigvault-issued token your SDK produces will verify
    against any conforming verifier (server or other SDK).
 2. Forward compatibility: new suites are additive (new bytes in the
    suite registry); old SDKs gracefully refuse to verify what they

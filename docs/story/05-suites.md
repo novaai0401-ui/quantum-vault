@@ -4,12 +4,12 @@
 
 NIST's post-quantum contest produced three signature standards:
 ML-DSA (Dilithium), Falcon, and SLH-DSA (SPHINCS+). Each makes a
-different trade-off. QuantumVault supports the first two and will
+different trade-off. Sigvault supports the first two and will
 likely add SLH-DSA in v4.5 once there's demand.
 
 ## The suite byte
 
-Every QuantumVault token carries a single byte near the start that
+Every Sigvault token carries a single byte near the start that
 identifies the signature algorithm. The suite byte lets the wire
 format evolve without bumping the protocol version.
 

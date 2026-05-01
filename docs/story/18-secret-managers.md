@@ -16,7 +16,7 @@ Three answers, ranked by trust:
 3. **A command that pulls from KMS / Vault / Azure KV / 1Password
    on every boot** — the 100 % answer for compliance-driven shops.
 
-QuantumVault supports all three through a single pluggable interface,
+Sigvault supports all three through a single pluggable interface,
 `MasterKeyProvider`, in `qv-server/master-key.mjs`. Zero npm deps. No
 hard dependency on any one cloud.
 
@@ -70,7 +70,7 @@ That is by design — delete to rotate.
 
 ## Backend 3 — exec (the universal escape hatch)
 
-The whole point of this backend is that QuantumVault should not have a
+The whole point of this backend is that Sigvault should not have a
 hardcoded list of supported KMSes. Instead: you write a 5-line wrapper
 script that prints the key on stdout. qv-server runs the script on
 boot and validates the output is 64 hex chars.

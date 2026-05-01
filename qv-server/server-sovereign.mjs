@@ -1,5 +1,5 @@
 /**
- * QuantumVault v4.0 — SOVEREIGN REST API Server
+ * Sigvault v4.0 — SOVEREIGN REST API Server
  * ================================================
  * ZERO npm dependencies. Uses Node.js stdlib only:
  *   - http       (built-in)
@@ -447,7 +447,7 @@ route('GET', '/v3/health', publicRL((_req, res) => {
 
 route('GET', '/v3/spec', publicRL((_req, res) => {
   json(res, 200, {
-    name: 'QuantumVault', version: '4.0.0-alpha',
+    name: 'Sigvault', version: '4.0.0-alpha',
     signature: 'ML-DSA-87 (FIPS 204)', kem: 'ML-KEM-1024 (FIPS 203)',
     symmetric: 'XChaCha20-Poly1305', hash: 'SHA3-256 (FIPS 202)',
     tokenMagic: '0x51564C54',
@@ -863,7 +863,7 @@ loadRevoked();
 bootReady = true;
 server.listen(PORT, HOST, () => {
   console.log(`\n╔════════════════════════════════════════════╗`);
-  console.log(`║  QuantumVault v4.1 — Sovereign Server      ║`);
+  console.log(`║  Sigvault v4.1 — Sovereign Server      ║`);
   console.log(`║  http://${HOST}:${String(PORT).padEnd(5)}                     ║`);
   console.log(`║  Zero npm deps · Node stdlib only         ║`);
   console.log(`║  Data dir: ${DATA_DIR.slice(-28).padEnd(30)}  ║`);

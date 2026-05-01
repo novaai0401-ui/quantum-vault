@@ -19,7 +19,7 @@ The workarounds are legion:
   caller holds a paired key. Adds complexity, still not replay-proof
   in every case.
 
-QuantumVault's answer is structurally different: the *token itself*
+Sigvault's answer is structurally different: the *token itself*
 carries a counter, and the server keeps the counter authoritative.
 
 ## What it is

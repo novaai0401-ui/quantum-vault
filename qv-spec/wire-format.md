@@ -1,6 +1,6 @@
-# QuantumVault Wire Format (v3.0)
+# Sigvault Wire Format (v3.0)
 
-This document is the **canonical specification** of the QuantumVault
+This document is the **canonical specification** of the Sigvault
 token bytes. Any conforming SDK in any language MUST produce and
 consume tokens matching this layout exactly.
 
@@ -127,7 +127,7 @@ verify-window for in-flight tokens issued within the same advance.
 
 ## Conformance
 
-A QuantumVault-conforming SDK MUST:
+A Sigvault-conforming SDK MUST:
 
 1. Produce a token whose bytes match this layout for any
    `(suite, tokenType, claims, encryptKey, signingKeySeed, chain)`

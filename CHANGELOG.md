@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to QuantumVault are documented here.
+All notable changes to Sigvault are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/)
@@ -225,7 +225,7 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 ## [4.2.0] — 2026-04-20
 
 First release distributed across **five registries**. Before v4.2 the
-only way to use QuantumVault was `git clone`; as of this release every
+only way to use Sigvault was `git clone`; as of this release every
 major language ecosystem can install it natively.
 
 ### Added
@@ -233,9 +233,9 @@ major language ecosystem can install it natively.
 - **Falcon-512 / Falcon-1024 dispatch** in `issue_token` / `verify_token`
   (suite bytes `0x10` and `0x11`). Falcon-512 signatures are **666 B
   — 7.1× smaller than ML-DSA-87** and verify 6× faster.
-- **`@quantumvault/sdk`** on npm — Node 18+, Deno, Bun, Cloudflare
+- **`@sigvault/sdk`** on npm — Node 18+, Deno, Bun, Cloudflare
   Workers. Pure JavaScript, no post-install.
-- **`@quantumvault/wasm`** on npm — 127 KB `.wasm` + a portable loader
+- **`@sigvault/wasm`** on npm — 127 KB `.wasm` + a portable loader
   with auto-wired `qv_host_random` for every JS runtime.
 - **`qv-core`** on crates.io — full Rust library with optional
   `falcon` feature (requires a C toolchain).
@@ -250,7 +250,7 @@ major language ecosystem can install it natively.
   the native library, the C header, `LICENSE`, and `README`.
 - **Concepts & Glossary docs page** covering every protocol term,
   every suite byte, MutationChain mechanics, key-triplet semantics,
-  wire-format anatomy, error-code taxonomy, and a JWT-vs-QuantumVault
+  wire-format anatomy, error-code taxonomy, and a JWT-vs-Sigvault
   feature matrix.
 - **`.github/workflows/release.yml`** — single-tag fan-out to all
   five registries on `git tag v*.*.*`. Supports `dry_run=true` via

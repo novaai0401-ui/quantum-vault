@@ -28,7 +28,7 @@ someone's — the stored data is decrypted retroactively. Every token
 you issue today that will still be meaningful in 2035 is already
 compromised. You just don't know it yet.
 
-**This is why QuantumVault exists.**
+**This is why Sigvault exists.**
 
 ## What breaks
 
@@ -77,9 +77,9 @@ issued under that key is forgeable.
    cracks them in 2035 has no problem — the forged tokens will present
    keys the issuer has long since discarded.
 
-## What QuantumVault does instead
+## What Sigvault does instead
 
-QuantumVault pairs a post-quantum signature (ML-DSA-87 / Falcon-512 /
+Sigvault pairs a post-quantum signature (ML-DSA-87 / Falcon-512 /
 Falcon-1024) with three additional safeguards that each alone would
 improve on JWT:
 
@@ -127,7 +127,7 @@ in 2026.
 
 ## The design
 
-QuantumVault's answer:
+Sigvault's answer:
 
 - A sovereign Node.js REST server with zero npm dependencies, because
   the last thing you want on the critical path of a cryptographic
@@ -160,7 +160,7 @@ QuantumVault's answer:
 
 ## The comparison
 
-| Question | JWT (RS256) | PASETO (v4.public) | QuantumVault (ML-DSA-87) |
+| Question | JWT (RS256) | PASETO (v4.public) | Sigvault (ML-DSA-87) |
 |----------|-------------|--------------------|--------------------------|
 | Post-quantum secure signing? | No | No (Ed25519) | Yes |
 | Payload confidentiality by default? | No | Only v*.local | Yes |
@@ -170,7 +170,7 @@ QuantumVault's answer:
 | Zero-dep implementation available? | No | No | Yes |
 | Standards body ratification? | RFC 7519 | draft | NIST FIPS 204/206 |
 
-The other formats are fine — for *today*. QuantumVault is what you
+The other formats are fine — for *today*. Sigvault is what you
 deploy if you intend the same infrastructure to still be authoritative
 in 2035.
 

@@ -123,6 +123,6 @@ rejects monotonic, queueDepth accuracy, shutdown-drain. All run in
 | JWT libs (node-jsonwebtoken) | Synchronous, event-loop-bound | None | N/A |
 | Auth0 | Managed | Unknown | Yes (429) |
 | Keycloak | Thread pool | Unbounded queue | No |
-| **QuantumVault** | **Worker threads** | **Bounded queue** | **Yes (503 POOL_OVERLOADED)** |
+| **Sigvault** | **Worker threads** | **Bounded queue** | **Yes (503 POOL_OVERLOADED)** |
 
 Next: Chapter 12, [Graceful Shutdown + Health](./12-lifecycle.md).

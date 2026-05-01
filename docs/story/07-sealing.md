@@ -17,7 +17,7 @@ Now `keyA`'s material is returned whenever the server asks for `keyB`.
 An attacker who had `keyA` briefly can use it as `keyB` forever.
 
 The fix is AEAD with **associated data binding each envelope to its
-identity**. QuantumVault's AAD is the UUID that names the key.
+identity**. Sigvault's AAD is the UUID that names the key.
 
 ## The construction
 
@@ -122,6 +122,6 @@ unsealed once per key.
 | Vault (Shamir) | AES-GCM | No AAD binding | Seals only, not keys |
 | Auth0 | (closed) | (unknown) | Proprietary |
 | AWS KMS | (platform) | Yes (KeyId in grant) | Yes |
-| **QuantumVault** | **AES-256-GCM** | **Yes (UUID AAD)** | **Planned v4.4** |
+| **Sigvault** | **AES-256-GCM** | **Yes (UUID AAD)** | **Planned v4.4** |
 
 Next: Chapter 8, [Request Lifecycle](./08-request-lifecycle.md).

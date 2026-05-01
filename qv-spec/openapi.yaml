@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: QuantumVault Sovereign API
+  title: Sigvault Sovereign API
   version: 4.3.0
   summary: Post-quantum token issuer/verifier — REST surface
   description: |
-    QuantumVault is a self-hosted, post-quantum, replay-proof token
+    Sigvault is a self-hosted, post-quantum, replay-proof token
     issuer and verifier. This document is the **public contract** for
     integrating with `qv-server`. Any SDK that produces or consumes
     tokens via this surface MUST conform to the schemas defined here.
