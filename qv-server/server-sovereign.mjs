@@ -54,6 +54,7 @@ import { loadClaimsConfig, validateClaims }  from './claims.mjs';
 import { loadCidrConfig, matchesAny }        from './cidr.mjs';
 import { applyTrace }                        from './trace.mjs';
 import { loadOtlpConfig, createOtlpExporter } from './otlp.mjs';
+import { probeFalconCli, falconSign, falconVerify } from './falcon-bridge.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -143,6 +144,16 @@ const OTLP_CFG = loadOtlpConfig();
 const otlp     = createOtlpExporter(OTLP_CFG);
 if (OTLP_CFG.enabled) {
   console.log(`✔ OTLP exporter: ${OTLP_CFG.url.href} (batch=${OTLP_CFG.batchMax}, flush=${OTLP_CFG.flushMs}ms)`);
+}
+
+// Falcon bridge availability probe — log once at boot. The bridge is
+// optional: deployments that don't need Falcon don't need qv-cli on PATH.
+const FALCON_PROBE = probeFalconCli();
+if (FALCON_PROBE.available) {
+  console.log(`✔ Falcon bridge: qv-cli at ${FALCON_PROBE.path}`);
+} else {
+  console.log(`⚠  Falcon bridge: not available (${FALCON_PROBE.reason}) — `
+    + `/v3/falcon/* will return 503 FALCON_BRIDGE_UNAVAILABLE`);
 }
 
 const audit = createAuditor({
@@ -808,6 +819,89 @@ route('POST', '/v3/token/inspect', verifyRL(async (req, res) => {
     const tokenBytes = /^[0-9a-f]+$/i.test(token) ? hex2u8(token) : b64ud(token);
     json(res, 200, inspectToken(tokenBytes));
   } catch (e) { err(res, 400, 'INSPECT_FAILED', e.message); }
+}));
+
+// ─── Falcon bridge endpoints ────────────────────────────────────────────────
+// Network-accessible Falcon-512 / Falcon-1024 sign + verify, delegating
+// to qv-cli (Rust + PQClean) over a child process. Latency is high
+// (~50–100 ms per spawn), so /v3/admin/falcon/sign is admin-only and
+// rate-limited; /v3/falcon/verify is public + verify-bucket-limited.
+//
+// These endpoints accept raw key + message bytes and return raw
+// signatures. They do NOT issue Sigvault tokens — full
+// suite=falcon{512,1024} on /v3/token/issue requires SDK-side Falcon
+// support and is on the v4.4 roadmap (see L9 in
+// docs/story/15-limitations.md). This bridge is the substrate that
+// will plug under that work; today it lets operators do ad-hoc PQ
+// signing without leaving the server.
+
+function decodeBytesField(s, field) {
+  if (typeof s !== 'string' || !s) {
+    const e = new Error(`MISSING_${field.toUpperCase()}`);
+    e.code = `MISSING_${field.toUpperCase()}`;
+    throw e;
+  }
+  // hex first; fall back to base64url (also accepts standard base64).
+  if (/^[0-9a-f]+$/i.test(s) && s.length % 2 === 0) return Buffer.from(s, 'hex');
+  try {
+    return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  } catch {
+    const e = new Error(`INVALID_${field.toUpperCase()}`);
+    e.code = `INVALID_${field.toUpperCase()}`;
+    throw e;
+  }
+}
+
+route('POST', '/v3/admin/falcon/sign', admin(async (req, res) => {
+  if (!FALCON_PROBE.available) {
+    return err(res, 503, 'FALCON_BRIDGE_UNAVAILABLE', FALCON_PROBE.reason);
+  }
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  const { n, signingKey, message } = body;
+  if (n !== 512 && n !== 1024) return err(res, 400, 'FALCON_BAD_N', 'n must be 512 or 1024');
+  let sk, msg;
+  try {
+    sk  = decodeBytesField(signingKey, 'signingKey');
+    msg = decodeBytesField(message,    'message');
+  } catch (e) { return err(res, 400, e.code || 'INVALID_REQUEST', e.message); }
+  try {
+    const sig = await falconSign({ signingKey: sk, message: msg, n });
+    audit.event('falcon.sign', {
+      requestId: req.requestId, ip: extractClientIp(req),
+      n, msgBytes: msg.length, sigBytes: sig.length,
+    });
+    json(res, 200, { sigHex: sig.toString('hex'), sigBytes: sig.length, n });
+  } catch (e) {
+    audit.event('falcon.sign', {
+      level: 'error',
+      requestId: req.requestId, ip: extractClientIp(req),
+      n, msgBytes: msg.length, error: e.code || 'FALCON_SIGN_FAILED',
+    });
+    return err(res, 500, e.code || 'FALCON_SIGN_FAILED', e.message);
+  }
+}));
+
+route('POST', '/v3/falcon/verify', verifyRL(async (req, res) => {
+  if (!FALCON_PROBE.available) {
+    return err(res, 503, 'FALCON_BRIDGE_UNAVAILABLE', FALCON_PROBE.reason);
+  }
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  const { n, verifyingKey, message, signature } = body;
+  if (n !== 512 && n !== 1024) return err(res, 400, 'FALCON_BAD_N', 'n must be 512 or 1024');
+  let vk, msg, sig;
+  try {
+    vk  = decodeBytesField(verifyingKey, 'verifyingKey');
+    msg = decodeBytesField(message,      'message');
+    sig = decodeBytesField(signature,    'signature');
+  } catch (e) { return err(res, 400, e.code || 'INVALID_REQUEST', e.message); }
+  try {
+    const valid = await falconVerify({ verifyingKey: vk, message: msg, signature: sig, n });
+    json(res, 200, { valid, n });
+  } catch (e) {
+    return err(res, 500, e.code || 'FALCON_VERIFY_FAILED', e.message);
+  }
 }));
 
 // ─── Key discovery (JWKS-equivalent) ────────────────────────────────────────

@@ -13,6 +13,30 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Falcon HTTP bridge — partial L9 closure.** A new `qv-server/falcon-bridge.mjs`
+  spawns the `qv-cli` binary as a child process per call, delegating
+  Falcon-512 / Falcon-1024 sign + verify to qv-core's PQClean
+  implementation. Wired into two HTTP endpoints:
+  - `POST /v3/admin/falcon/sign` — admin-only, signs operator-supplied
+    bytes under operator-supplied Falcon SK. Returns hex signature.
+  - `POST /v3/falcon/verify` — public (verify-bucket-rate-limited),
+    returns `{ valid: boolean, n }`.
+  Endpoints return `503 FALCON_BRIDGE_UNAVAILABLE` if the qv-cli
+  binary is not on the host or was built without the `falcon`
+  feature. Bridge has 30 s timeout per call, 16 MiB stdout cap, and
+  cleans up its temp files. New audit event `falcon.sign`. Latency
+  is high (~50–100 ms per spawn) so this is **not** the path for
+  bulk Falcon issuance — that needs SDK-side Falcon support and stays
+  on the v4.4 roadmap. This bridge is the substrate that v4.4 work
+  will plug under.
+
+  Operator override: `QV_CLI_BIN=/path/to/qv` to pin a specific
+  binary; otherwise the bridge auto-discovers via `target/release`,
+  `target/debug`, or `PATH`. Spec sync gate updated:
+  `qv-spec/openapi.yaml` gained both endpoints; `qv-spec/error-codes.md`
+  gained `FALCON_BRIDGE_UNAVAILABLE`, `FALCON_BAD_N`, `FALCON_SIGN_FAILED`,
+  etc. 5 unit + 2 live integration tests (live tests skipped when
+  qv-cli isn't present).
 - **`qv-audit` forensic CLI** (`qv-server/qv-audit.mjs`). Operator tool
   that streams the JSONL audit log and filters by event, time range,
   request-id, trace-id, key-id, status family, IP, denial reason, or

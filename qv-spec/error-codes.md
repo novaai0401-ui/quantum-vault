@@ -98,6 +98,32 @@ any cryptographic work happens. Tunable env vars are listed in the
 | `NOT_FOUND`             | 404 | Generic "no such resource" fallback. |
 | `INTERNAL`              | 500 | Generic server-side failure (rare; surfaces only when no more specific code applies). |
 
+## Falcon bridge
+
+Codes returned by the `/v3/admin/falcon/sign` and `/v3/falcon/verify`
+endpoints. The bridge delegates to `qv-cli` over a child process; if
+the operator hasn't installed qv-cli (or built it without the
+`falcon` feature) the endpoints return 503.
+
+| Code | HTTP | Meaning |
+|------|-----:|---------|
+| `FALCON_BRIDGE_UNAVAILABLE`   | 503 | `qv-cli` binary not on host or built without the `falcon` feature. Set `QV_CLI_BIN` or install. |
+| `FALCON_BRIDGE_TIMEOUT`       | 500 | Child process exceeded the 30 s sign/verify timeout. |
+| `FALCON_BRIDGE_OUTPUT_TOO_LARGE` | 500 | Child wrote >16 MiB to stdout/stderr — process killed. |
+| `FALCON_BAD_N`                | 400 | `n` is not 512 or 1024. |
+| `FALCON_BAD_INPUT`            | 400 | Internal: keys/message must be Buffer (caller bug). |
+| `FALCON_SIGN_FAILED`          | 500 | qv-cli `falcon-sign` returned non-zero. |
+| `FALCON_SIGN_BAD_OUTPUT`      | 500 | qv-cli stdout was not parseable hex. |
+| `FALCON_VERIFY_FAILED`        | 500 | qv-cli `falcon-verify` returned an unexpected exit code (≠ 0 or 2). |
+| `MISSING_SIGNINGKEY`          | 400 | `signingKey` field absent. |
+| `MISSING_VERIFYINGKEY`        | 400 | `verifyingKey` field absent. |
+| `MISSING_MESSAGE`             | 400 | `message` field absent. |
+| `MISSING_SIGNATURE`           | 400 | `signature` field absent. |
+| `INVALID_SIGNINGKEY`          | 400 | `signingKey` not hex or base64url. |
+| `INVALID_VERIFYINGKEY`        | 400 | `verifyingKey` not hex or base64url. |
+| `INVALID_MESSAGE`             | 400 | `message` not hex or base64url. |
+| `INVALID_SIGNATURE`           | 400 | `signature` not hex or base64url. |
+
 ## Boot-time errors (logged to stderr, not HTTP)
 
 These never reach a client — they cause the server to refuse to

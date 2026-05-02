@@ -360,6 +360,95 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/InspectResp' } } }
         '400': { $ref: '#/components/responses/BadRequest' }
 
+  /v3/admin/falcon/sign:
+    post:
+      tags: [token]
+      summary: Sign arbitrary bytes with Falcon-512 / Falcon-1024 (admin)
+      description: |
+        Network-accessible Falcon signer that delegates to the qv-cli
+        binary (Rust + PQClean). Latency is high (~50–100 ms per call
+        due to child-process spawn) so this endpoint is admin-only.
+        Operators bring their own Falcon signing key bytes.
+
+        This is **not** the path for issuing Sigvault tokens with
+        suite=falcon{512,1024} — that requires SDK-side Falcon support
+        and is on the v4.4 roadmap (limitation L9). Today this surface
+        lets operators do ad-hoc PQ signing without leaving the server.
+
+        Returns 503 `FALCON_BRIDGE_UNAVAILABLE` if qv-cli is not on the
+        host (set `QV_CLI_BIN` or install qv-cli).
+      security: [{ adminBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [n, signingKey, message]
+              properties:
+                n: { type: integer, enum: [512, 1024] }
+                signingKey: { type: string, description: hex or base64url-encoded raw Falcon SK }
+                message:    { type: string, description: hex or base64url-encoded message bytes }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sigHex, sigBytes, n]
+                properties:
+                  sigHex:   { type: string, description: hex-encoded signature }
+                  sigBytes: { type: integer }
+                  n:        { type: integer, enum: [512, 1024] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500':
+          description: signing failed (bad key, bad message, internal)
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: bridge unavailable
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /v3/falcon/verify:
+    post:
+      tags: [token]
+      summary: Verify a Falcon-512 / Falcon-1024 signature (public)
+      description: |
+        Public Falcon verifier. Returns `{ valid: boolean }`. Operator
+        rate-limited via the verify bucket. Same caveat as
+        `/v3/admin/falcon/sign`: this is the bridge to qv-cli, not full
+        Sigvault token verification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [n, verifyingKey, message, signature]
+              properties:
+                n:            { type: integer, enum: [512, 1024] }
+                verifyingKey: { type: string }
+                message:      { type: string }
+                signature:    { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid, n]
+                properties:
+                  valid: { type: boolean }
+                  n:     { type: integer, enum: [512, 1024] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: verifier failed
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: bridge unavailable
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
   /v3/revoked:
     get:
       tags: [keys]
