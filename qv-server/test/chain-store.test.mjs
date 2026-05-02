@@ -24,8 +24,16 @@ test('createChainStore: file is the default kind', () => {
   rmSync(d, { recursive: true, force: true });
 });
 
-test('createChainStore: postgres / s3 / etcd are reserved (v4.4)', () => {
-  for (const k of ['postgres', 's3', 'etcd']) {
+test('createChainStore: postgres requires QV_CHAIN_STORE_URL', () => {
+  // Don't actually connect — just assert the missing-URL guard fires
+  // before any network I/O.
+  assert.throws(
+    () => createChainStore({ kind: 'postgres' }),
+    /CHAIN_STORE_PG_URL_MISSING/);
+});
+
+test('createChainStore: s3 / etcd are reserved (v4.5)', () => {
+  for (const k of ['s3', 'etcd']) {
     assert.throws(
       () => createChainStore({ kind: k, chainDir: '/tmp' }),
       /CHAIN_STORE_NOT_AVAILABLE/);

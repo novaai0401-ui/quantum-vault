@@ -77,24 +77,33 @@ export function createFileChainStore({ chainDir, fsync = true } = {}) {
 }
 
 /**
- * Stub for future Postgres / etcd / S3 backends. Today returns the file
- * store; documented here so the env-var contract is forward-compatible
- * with v4.4. When QV_CHAIN_STORE=postgres ships, this dispatcher routes
- * to the new backend without touching the call sites in
- * server-sovereign.mjs.
+ * Dispatcher. Reads `kind` from opts or QV_CHAIN_STORE env (default: file).
+ *
+ * `file` returns synchronously. `postgres` returns a Promise because the
+ * connection + schema-ensure are async. Callers therefore must `await`
+ * the return value, then continue. server-sovereign.mjs handles both
+ * paths (sync + Promise) via a small await-or-pass-through bootstrap.
  */
 export function createChainStore(opts = {}) {
   const kind = (opts.kind || process.env.QV_CHAIN_STORE || 'file').toLowerCase();
   switch (kind) {
     case 'file':
       return createFileChainStore(opts);
-    case 'postgres':
-      throw new Error('CHAIN_STORE_NOT_AVAILABLE: postgres backend ships in v4.4 — '
-                    + 'see ROADMAP.md and qv-spec/wire-format.md');
+    case 'postgres': {
+      // Lazy import — never load the postgres client unless asked. Keeps
+      // the file backend's startup time and code-load surface unchanged.
+      const url = opts.url || process.env.QV_CHAIN_STORE_URL;
+      if (!url) {
+        throw new Error('CHAIN_STORE_PG_URL_MISSING: set QV_CHAIN_STORE_URL '
+                      + '(postgres://user:pass@host:port/db) or pass opts.url');
+      }
+      return import('./chain-store-postgres.mjs')
+        .then(m => m.createPostgresChainStore({ url, table: opts.table }));
+    }
     case 's3':
-      throw new Error('CHAIN_STORE_NOT_AVAILABLE: s3 backend ships in v4.4');
+      throw new Error('CHAIN_STORE_NOT_AVAILABLE: s3 backend ships in v4.5');
     case 'etcd':
-      throw new Error('CHAIN_STORE_NOT_AVAILABLE: etcd backend ships in v4.4');
+      throw new Error('CHAIN_STORE_NOT_AVAILABLE: etcd backend ships in v4.5');
     default:
       throw new Error(`CHAIN_STORE_UNKNOWN: ${kind} (allowed: file|postgres|s3|etcd)`);
   }

@@ -305,7 +305,8 @@ function b64ue(u8){ return Buffer.from(u8).toString('base64url'); }
 function b64ud(s) { return new Uint8Array(Buffer.from(s, 'base64url')); }
 function hex2u8(h){ return new Uint8Array(Buffer.from(h, 'hex')); }
 
-function loadKeystore() {
+async function loadKeystore() {
+  await ensureChainStore();
   cleanupStaleTmp(KS_FILE);
   if (!existsSync(KS_FILE)) return;
   const raw = JSON.parse(readFileSync(KS_FILE, 'utf8'));
@@ -340,7 +341,7 @@ function loadKeystore() {
     // restarts.
     const seed    = Buffer.from(encryptKey.slice(0, 32));
     const { counter: ctr, state: restoredState, records } =
-          chainStore.load(keyId, seed);
+          await chainStore.load(keyId, seed);
     if (records > 0) {
       console.log(`✔ Chain for ${keyId}: verified ${records} records, counter=${ctr}`);
     }
@@ -379,14 +380,26 @@ function saveKeystore() {
 //
 // fsync-by-default; opt out with QV_CHAIN_FSYNC=0 (test envs only).
 const CHAIN_FSYNC = process.env.QV_CHAIN_FSYNC !== '0';
-const chainStore  = createChainStore({ chainDir: CHAIN_DIR, fsync: CHAIN_FSYNC });
 
-function appendChain(keyId, counter, stateHash) {
+// `createChainStore` returns synchronously for `file` and a Promise for
+// `postgres`. We resolve to a single object before keystore-load reaches
+// chainStore.load. boot() awaits this when needed.
+let chainStore = createChainStore({ chainDir: CHAIN_DIR, fsync: CHAIN_FSYNC });
+async function ensureChainStore() {
+  if (typeof chainStore?.then === 'function') {
+    chainStore = await chainStore;
+    console.log(`✔ ChainStore: ${chainStore.kind}`);
+  }
+}
+
+async function appendChain(keyId, counter, stateHash) {
   // Cross-host fence verification. If we share DATA_DIR with another node
   // that stole our writer lease (NFS / SMB / EFS), this throws
   // WRITER_LOCK_LOST before we corrupt the chain log.
   if (WRITER_LOCK) WRITER_LOCK.checkFence();
-  chainStore.append(keyId, counter, stateHash);
+  // Postgres backend's append is async; file backend is sync. Awaiting
+  // a non-Promise value is harmless.
+  return chainStore.append(keyId, counter, stateHash);
 }
 
 // ─── Minimal HTTP framework ─────────────────────────────────────────────────
@@ -546,7 +559,7 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
       signingKeySeed: entry.signingKey, encryptKey: entry.encryptKey,
       chain, claims, ttl, suite: suiteId, tokenType: typeId,
     });
-    appendChain(keyId, chain.counter, chain.state);
+    await appendChain(keyId, chain.counter, chain.state);
     audit.event('token.issue', {
       requestId: req.requestId, ip: extractClientIp(req),
       keyId, suite, tokenType, ttlSecs: ttl,
@@ -961,17 +974,27 @@ server.on('request', (req, res) => {
 });
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
-loadKeystore();
-loadRevoked();
-bootReady = true;
-server.listen(PORT, HOST, () => {
-  console.log(`\n╔════════════════════════════════════════════╗`);
-  console.log(`║  Sigvault v4.1 — Sovereign Server      ║`);
+// Async boot path because the Postgres ChainStore connects + ensures the
+// schema before the first keystore load. The file backend resolves
+// instantly so this path is only ~ms longer than the v4.3 sync boot.
+(async () => {
+  try {
+    await loadKeystore();
+    loadRevoked();
+    bootReady = true;
+    server.listen(PORT, HOST, () => {
+      console.log(`\n╔════════════════════════════════════════════╗`);
+      console.log(`║  Sigvault v4.1 — Sovereign Server      ║`);
   console.log(`║  http://${HOST}:${String(PORT).padEnd(5)}                     ║`);
   console.log(`║  Zero npm deps · Node stdlib only         ║`);
   console.log(`║  Data dir: ${DATA_DIR.slice(-28).padEnd(30)}  ║`);
-  if (CORS_CFG.mode !== 'off') console.log(`║  CORS: ${CORS_CFG.mode.padEnd(34)}  ║`);
-  console.log(`╚════════════════════════════════════════════╝\n`);
-});
+      if (CORS_CFG.mode !== 'off') console.log(`║  CORS: ${CORS_CFG.mode.padEnd(34)}  ║`);
+      console.log(`╚════════════════════════════════════════════╝\n`);
+    });
+  } catch (e) {
+    console.error(`[boot] FATAL: ${e.stack || e.message}`);
+    process.exit(1);
+  }
+})();
 
 export default server;

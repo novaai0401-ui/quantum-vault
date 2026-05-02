@@ -13,6 +13,21 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Postgres `ChainStore` backend (zero npm deps)** — closes limitation
+  L1 (single-writer MutationChain). Implements just enough of the
+  Postgres frontend wire-protocol v3.0 in `qv-server/postgres.mjs` to
+  speak SCRAM-SHA-256 auth + simple/extended queries against any
+  modern Postgres. No `pg`, no `pg-pool`, no `libpq` — supply-chain
+  surface stays at zero. Backed by `qv-server/chain-store-postgres.mjs`
+  which uses `PRIMARY KEY (key_id, counter)` so multi-writer races
+  surface as `CHAIN_LOG_CONFLICT` (a deterministic 23505 unique
+  violation), not silent corruption. Toggle with
+  `QV_CHAIN_STORE=postgres` and `QV_CHAIN_STORE_URL=postgres://…`.
+  Schema script `qv-ops/sql/sigvault_chain.sql`. Integration tests
+  gated on `QV_PG_TEST_URL` (skipped without a live DB).
+- **Async server bootstrap** so the Postgres ChainStore can connect +
+  ensure schema before the keystore loads. File backend startup time
+  unchanged.
 - **Pluggable `ChainStore` interface** (`qv-server/chain-store.mjs`).
   Decouples the MutationChain append-log from the file backend so v4.4
   can swap in Postgres / etcd / S3 without touching call sites. Today
