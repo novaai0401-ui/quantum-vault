@@ -251,3 +251,149 @@ test('readJsonBounded: bad JSON → INVALID_JSON with 400', async () => {
     assert.equal(e.status, 400);
   }
 });
+
+// ─── Per-key rate limit tests ──────────────────────────────────────────────
+
+test('loadRateLimitConfig: per-key disabled by default', () => {
+  const cfg = loadRateLimitConfig({});
+  assert.equal(cfg.perKey.issueRpm, 0);
+  assert.deepEqual(cfg.perKeyOverrides, {});
+});
+
+test('loadRateLimitConfig: QV_RATE_PER_KEY_ISSUE_RPM accepted', () => {
+  const cfg = loadRateLimitConfig({ QV_RATE_PER_KEY_ISSUE_RPM: '100' });
+  assert.equal(cfg.perKey.issueRpm, 100);
+});
+
+test('loadRateLimitConfig: per-key overrides JSON parsed', () => {
+  const cfg = loadRateLimitConfig({
+    QV_RATE_PER_KEY_OVERRIDES: '{"key-a":50,"key-b":1000}',
+  });
+  assert.equal(cfg.perKeyOverrides['key-a'], 50);
+  assert.equal(cfg.perKeyOverrides['key-b'], 1000);
+});
+
+test('loadRateLimitConfig: per-key overrides reject malformed JSON', () => {
+  assert.throws(() => loadRateLimitConfig({ QV_RATE_PER_KEY_OVERRIDES: 'not-json' }),
+    /must be valid JSON/);
+});
+
+test('loadRateLimitConfig: per-key overrides reject negative rpm', () => {
+  assert.throws(() => loadRateLimitConfig({
+    QV_RATE_PER_KEY_OVERRIDES: '{"k":-1}',
+  }), /must be 0\.\.1_000_000/);
+});
+
+test('checkKey: inert (allow-all) when issueRpm = 0', () => {
+  const cfg = loadRateLimitConfig({});
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  for (let i = 0; i < 100; i++) {
+    const v = lim.checkKey('key-x', 'issue');
+    assert.equal(v.allowed, true);
+    assert.equal(v.bypass, true);
+  }
+});
+
+test('checkKey: enforces issueRpm = 5 against a single key', () => {
+  const cfg = loadRateLimitConfig({ QV_RATE_PER_KEY_ISSUE_RPM: '5' });
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  for (let i = 0; i < 5; i++) {
+    assert.equal(lim.checkKey('hot', 'issue').allowed, true,
+      `request ${i+1} should be allowed`);
+  }
+  const denied = lim.checkKey('hot', 'issue');
+  assert.equal(denied.allowed, false);
+  assert.equal(denied.reason, 'per_key_rate');
+  assert.ok(denied.resetSec > 0);
+});
+
+test('checkKey: separate buckets per keyId', () => {
+  const cfg = loadRateLimitConfig({ QV_RATE_PER_KEY_ISSUE_RPM: '2' });
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  // Drain key A; key B unaffected.
+  lim.checkKey('a', 'issue');
+  lim.checkKey('a', 'issue');
+  const aDenied = lim.checkKey('a', 'issue');
+  assert.equal(aDenied.allowed, false);
+  const bAllowed = lim.checkKey('b', 'issue');
+  assert.equal(bAllowed.allowed, true);
+});
+
+test('checkKey: refills over time', () => {
+  const cfg = loadRateLimitConfig({ QV_RATE_PER_KEY_ISSUE_RPM: '60' }); // 1/sec
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  for (let i = 0; i < 60; i++) lim.checkKey('k', 'issue');
+  assert.equal(lim.checkKey('k', 'issue').allowed, false);
+  // 30 seconds later the bucket has refilled by 30 tokens.
+  t = 30_000;
+  for (let i = 0; i < 30; i++) {
+    assert.equal(lim.checkKey('k', 'issue').allowed, true,
+      `should allow refill #${i+1}`);
+  }
+  assert.equal(lim.checkKey('k', 'issue').allowed, false);
+});
+
+test('checkKey: per-key override beats default', () => {
+  const cfg = loadRateLimitConfig({
+    QV_RATE_PER_KEY_ISSUE_RPM: '10',
+    QV_RATE_PER_KEY_OVERRIDES: '{"vip":100}',
+  });
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  // Default key is throttled at 10
+  for (let i = 0; i < 10; i++) lim.checkKey('reg', 'issue');
+  assert.equal(lim.checkKey('reg', 'issue').allowed, false);
+  // VIP override raises ceiling to 100
+  for (let i = 0; i < 100; i++) {
+    assert.equal(lim.checkKey('vip', 'issue').allowed, true,
+      `vip request ${i+1}`);
+  }
+  assert.equal(lim.checkKey('vip', 'issue').allowed, false);
+});
+
+test('checkKey: zero-override disables throttling for one key while default applies to others', () => {
+  const cfg = loadRateLimitConfig({
+    QV_RATE_PER_KEY_ISSUE_RPM: '5',
+    QV_RATE_PER_KEY_OVERRIDES: '{"unlimited":0}',
+  });
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  // 'unlimited' has rpm 0 → allow-all (interpreted as inert per the helper)
+  for (let i = 0; i < 50; i++) {
+    assert.equal(lim.checkKey('unlimited', 'issue').allowed, true);
+  }
+  // Other keys still capped at 5
+  for (let i = 0; i < 5; i++) lim.checkKey('regular', 'issue');
+  assert.equal(lim.checkKey('regular', 'issue').allowed, false);
+});
+
+test('checkKey: globally disabled limiter bypasses per-key', () => {
+  const cfg = loadRateLimitConfig({
+    QV_RATE_LIMIT_DISABLED: 'true',
+    QV_RATE_PER_KEY_ISSUE_RPM: '1',
+  });
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  for (let i = 0; i < 10; i++) {
+    const v = lim.checkKey('k', 'issue');
+    assert.equal(v.allowed, true);
+    assert.equal(v.bypass, true);
+  }
+});
+
+test('sweep: drops idle per-key entries after idleSweepSec', () => {
+  const cfg = loadRateLimitConfig({ QV_RATE_PER_KEY_ISSUE_RPM: '10' });
+  let t = 0;
+  const lim = createLimiter(cfg, { now: () => t });
+  lim.checkKey('a', 'issue');
+  lim.checkKey('b', 'issue');
+  assert.equal(lim.keySize(), 2);
+  t += (cfg.idleSweepSec + 1) * 1000;
+  const dropped = lim.sweep();
+  assert.ok(dropped >= 2, `expected ≥2 dropped, got ${dropped}`);
+  assert.equal(lim.keySize(), 0);
+});

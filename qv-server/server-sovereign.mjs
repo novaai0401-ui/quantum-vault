@@ -106,6 +106,11 @@ if (RATE_CFG.disabled) {
   console.warn('⚠  QV_RATE_LIMIT_DISABLED=true — rate limiting is OFF. Use only behind a trusted mesh.');
 } else {
   console.log(`✔ Rate limits (per-IP rpm): public=${RATE_CFG.rpm.public} verify=${RATE_CFG.rpm.verify} admin=${RATE_CFG.rpm.admin} authFail=${RATE_CFG.rpm.authFail}; body ≤ ${RATE_CFG.maxBodyBytes}B, claims ≤ ${RATE_CFG.maxClaimsBytes}B`);
+  if (RATE_CFG.perKey.issueRpm > 0 || Object.keys(RATE_CFG.perKeyOverrides).length > 0) {
+    const overrides = Object.keys(RATE_CFG.perKeyOverrides).length;
+    console.log(`✔ Per-key rate limit (issue): default=${RATE_CFG.perKey.issueRpm} rpm`
+      + (overrides ? `, ${overrides} override(s)` : ''));
+  }
 }
 
 // ─── Metrics (R-4.3.5) ──────────────────────────────────────────────────────
@@ -547,6 +552,27 @@ route('POST', '/v3/token/issue', admin(async (req, res) => {
   if (revoked.has(keyId)) return err(res, 410, 'KEY_REVOKED', `keyId ${keyId} is revoked`);
   const entry = keystore.get(keyId);
   if (!entry)  return err(res, 404, 'KEY_NOT_FOUND', keyId);
+
+  // Per-keyId rate limit (separate from per-IP). When configured, a
+  // single noisy keyId cannot drain the IP-level admin bucket and
+  // starve sibling keys on the same IP. Inert when QV_RATE_PER_KEY_ISSUE_RPM
+  // is 0 (the default).
+  const kVerdict = limiter.checkKey(keyId, 'issue');
+  if (!kVerdict.allowed) {
+    mRateDenies.inc({ category: 'per_key' });
+    audit.event('ratelimit.deny', {
+      level: 'warn',
+      requestId: req.requestId, ip: extractClientIp(req),
+      keyId, category: 'per_key', limit: kVerdict.limit,
+      retryAfter: kVerdict.resetSec, reason: kVerdict.reason,
+    });
+    res.setHeader('Retry-After',          String(kVerdict.resetSec));
+    res.setHeader('X-RateLimit-Limit',    String(kVerdict.limit));
+    res.setHeader('X-RateLimit-Remaining','0');
+    res.setHeader('X-RateLimit-Reset',    String(kVerdict.resetSec));
+    return err(res, 429, 'RATE_LIMITED_PER_KEY',
+      `keyId ${keyId} exceeded ${kVerdict.limit} rpm; retry in ${kVerdict.resetSec}s`);
+  }
 
   const suiteId = { dilithium5: SUITE_IDS.Dilithium5 }[suite];
   const typeId  = { access: TOKEN_TYPES.Access, refresh: TOKEN_TYPES.Refresh, service: TOKEN_TYPES.Service }[tokenType];

@@ -13,6 +13,17 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Per-keyId rate limits on `/v3/token/issue`**. A second dimension on
+  top of per-IP throttling: a single noisy keyId can no longer drain
+  the IP-level admin bucket and starve sibling keys on the same NAT
+  egress. Toggle via `QV_RATE_PER_KEY_ISSUE_RPM` (0 = disabled, the
+  default). Per-keyId overrides via `QV_RATE_PER_KEY_OVERRIDES` JSON
+  map (0 in the override = unmetered for that specific key). Stable
+  error code `RATE_LIMITED_PER_KEY` (429) with `Retry-After` and
+  standard `X-RateLimit-*` headers. Audit event
+  `ratelimit.deny{category="per_key"}`. Prometheus
+  `qv_rate_limit_denies_total{category="per_key"}` (no per-key labels —
+  cardinality stays bounded). 12 unit + 2 integration tests.
 - **Master-key rotation tool** (`qv-server/rotate-master.mjs`).
   Compliance-driven shops need periodic master-key rotation; this is
   the surgical path that preserves keyIds and existing tokens. Dry-run

@@ -22,6 +22,12 @@ QV_ADMIN_ALLOW_CIDRS="10.0.0.0/8"
 # 6. Rate limits matched to your steady-state traffic.
 QV_RATE_ADMIN_RPM=120
 QV_RATE_VERIFY_RPM=1200
+# Optional: second-dimension per-keyId issue throttle. 0 = off (default).
+# Stops a single noisy keyId from draining the IP bucket and starving
+# sibling keys on the same NAT egress.
+# QV_RATE_PER_KEY_ISSUE_RPM=600
+# Per-keyId override map. 0 = unlimited for that key.
+# QV_RATE_PER_KEY_OVERRIDES='{"<vip-keyId>":1200,"<unmetered>":0}'
 
 # 7. Keep the audit file from filling the disk.
 QV_AUDIT_ROTATE_BYTES=67108864   # 64 MiB
