@@ -39,9 +39,18 @@ jobs:
         with: { node-version: '20' }
       - run: node qv-spec/test-vectors/harness.mjs
 
+  openapi-sync:
+    name: openapi.yaml + error-codes.md ↔ server in lock-step
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node qv-ops/scripts/openapi-sync.mjs --verbose
+
   test:
     name: tests (${{ matrix.os }}, node ${{ matrix.node }})
-    needs: [dep-audit, conformance]
+    needs: [dep-audit, conformance, openapi-sync]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

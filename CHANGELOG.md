@@ -13,6 +13,26 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **OpenAPI ↔ server sync gate** (`qv-ops/scripts/openapi-sync.mjs`).
+  Bidirectional invariant in CI: every `route(...)` in
+  `server-sovereign.mjs` must appear under `paths:` in `qv-spec/openapi.yaml`
+  with the right method, and every spec path must have a matching
+  route. Same gate applies to error codes: every `err(res, …, 'CODE')`
+  must be documented in `qv-spec/error-codes.md`. Boot-time / SDK-side
+  codes already documented but not directly returned by an HTTP path
+  surface as soft warnings (not failures). Caught real drift on first
+  run: `/v3/keys/identify` and `/v3/token/verify-auto` were missing
+  from the spec, plus 21 newer error codes were undocumented. All
+  fixed in this commit.
+- **`qv-spec/openapi.yaml` updated** with `/v3/keys/identify` and
+  `/v3/token/verify-auto` (full request/response schemas).
+- **`qv-spec/error-codes.md` extended** with the 400-family validation
+  codes (`MISSING_KEY_ID`, `INVALID_VK`, `BATCH_TOO_LARGE`, etc.) and
+  the new server codes (`RATE_LIMITED_PER_KEY`, `IP_NOT_ALLOWED`,
+  `NO_KEY_MATCHED`, `ISSUE_FAILED`, `INSPECT_FAILED`, …).
+- **CI workflow gated**: `.github/workflows/ci.yml` runs the sync gate
+  alongside `dep-audit` and `conformance`. The full test matrix waits
+  on all three. Drift is now structurally impossible to merge.
 - **Per-keyId rate limits on `/v3/token/issue`**. A second dimension on
   top of per-IP throttling: a single noisy keyId can no longer drain
   the IP-level admin bucket and starve sibling keys on the same NAT

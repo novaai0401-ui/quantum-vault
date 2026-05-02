@@ -61,12 +61,42 @@ the contract.
 | `KOLMOGOROV_FAIL`         | 422 | Nonce entropy floor (0.85) not met. |
 | `TOKEN_EXPIRED`           | 410 | `issuedAt + ttl < now`. |
 
+## Request validation (400 family)
+
+Stable codes returned when the request envelope is malformed before
+any cryptographic work happens. Tunable env vars are listed in the
+`docs/story/16-operations.md` runbook.
+
+| Code | HTTP | Meaning |
+|------|-----:|---------|
+| `MISSING_KEY_ID`        | 400 | Required `keyId` field missing. |
+| `MISSING_TOKEN`         | 400 | Required `token` field missing. |
+| `MISSING_CLAIMS`        | 400 | Required `claims` field missing. |
+| `MISSING_ITEMS`         | 400 | Required `items` array missing in batch verify. |
+| `MISSING_FIELDS`        | 400 | Required field(s) missing — generic. |
+| `EMPTY_BATCH`           | 400 | Batch verify called with zero items. |
+| `BATCH_TOO_LARGE`       | 400 | Batch verify exceeds the 256-item cap. |
+| `BAD_ITEM`              | 400 | One batch entry was malformed. |
+| `INVALID_CLAIMS`        | 400 | Claims object failed structural caps; sub-codes in the claims-validation block. |
+| `INVALID_TYPE`          | 400 | `tokenType` not one of `access` / `refresh` / `service`. |
+| `INVALID_VK`            | 400 | `vkB64u` is not valid base64url. |
+| `INVALID_FINGERPRINT`   | 400 | `fingerprint` is not 32 lowercase hex chars. |
+| `INVALID_REQUEST`       | 400 | One of `vkB64u` or `fingerprint` is required and neither was supplied. |
+| `CLAIMS_TOO_LARGE`      | 413 | Claims serialise to more than `QV_MAX_CLAIMS_BYTES`. |
+
 ## Server-side / capacity
 
 | Code | HTTP | Meaning |
 |------|-----:|---------|
-| `POOL_OVERLOADED` | 503 | Verify-pool queue full. Retry with backoff. |
-| `POOL_SHUTDOWN`   | 503 | Server is draining. |
+| `POOL_OVERLOADED`       | 503 | Verify-pool queue full. Retry with backoff. |
+| `POOL_SHUTDOWN`         | 503 | Server is draining. |
+| `RATE_LIMITED_PER_KEY`  | 429 | Per-keyId issue rate exceeded; honour `Retry-After`. |
+| `IP_NOT_ALLOWED`        | 403 | Client IP outside the configured allowlist. |
+| `ISSUE_FAILED`          | 500 | Internal error during token issue (chain, signing, or sealing failure). |
+| `INSPECT_FAILED`        | 400 | Token failed structural parsing during inspect (no signature check). |
+| `NO_KEY_MATCHED`        | 401 | `/v3/token/verify-auto` could not find any active key whose verify passes. |
+| `NOT_FOUND`             | 404 | Generic "no such resource" fallback. |
+| `INTERNAL`              | 500 | Generic server-side failure (rare; surfaces only when no more specific code applies). |
 
 ## Boot-time errors (logged to stderr, not HTTP)
 

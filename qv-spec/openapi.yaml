@@ -207,6 +207,78 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
         '429': { $ref: '#/components/responses/RateLimited' }
 
+  /v3/token/verify-auto:
+    post:
+      tags: [token]
+      summary: Verify a token without supplying the keyId (server trial-verifies)
+      description: |
+        Same response shape as `/v3/token/verify`, but the caller does
+        NOT supply `keyId`. The server trial-verifies the token against
+        every active (non-revoked) key in the keystore until one
+        succeeds. O(N) over active keys; N is typically ≤10 in real
+        deployments. Returns the resolved `keyId` so callers can cache it.
+        Operationally closes limitation L2 without a wire-format change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: hex or base64url-encoded }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/VerifyResp' }
+                  - type: object
+                    properties:
+                      keyId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: no active key matches the token
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v3/keys/identify:
+    post:
+      tags: [keys]
+      summary: O(1) verifying-key → keyId lookup
+      description: |
+        Resolve a `keyId` given either a verifying-key (base64url) or
+        the 32-hex SHA3-256 fingerprint of one. Closes limitation L2
+        operationally — a caller that has a token but not the keyId can
+        compute the fingerprint locally and resolve in one round-trip
+        without a wire-format change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [vkB64u]
+                  properties: { vkB64u: { type: string } }
+                - type: object
+                  required: [fingerprint]
+                  properties: { fingerprint: { type: string, pattern: '^[0-9a-f]{32}$' } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keyId, fingerprint, revoked]
+                properties:
+                  keyId:       { type: string, format: uuid }
+                  fingerprint: { type: string, pattern: '^[0-9a-f]{32}$' }
+                  revoked:     { type: boolean }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v3/token/batch-verify:
     post:
       tags: [token]
