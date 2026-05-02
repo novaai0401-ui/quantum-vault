@@ -1,17 +1,17 @@
-# @quantumvault/wasm
+# @sigvault/wasm
 
-Portable WebAssembly build of QuantumVault. ~127 KB of `.wasm`, one host import
+Portable WebAssembly build of Sigvault. ~127 KB of `.wasm`, one host import
 (`qv_host_random` — wired automatically by the loader). Runs in browsers,
 Node 18+, Deno, Bun, and Cloudflare Workers.
 
 ```bash
-npm install @quantumvault/wasm
+npm install @sigvault/wasm
 ```
 
 ## Node / Deno / Bun
 
 ```js
-import { loadQV } from '@quantumvault/wasm';
+import { loadQV } from '@sigvault/wasm';
 const qv = await loadQV();
 // qv.* exposes the raw qv-core entry points — see repo for high-level wrappers.
 ```
@@ -19,15 +19,15 @@ const qv = await loadQV();
 ## Browser
 
 ```js
-import { loadQV } from '@quantumvault/wasm';
+import { loadQV } from '@sigvault/wasm';
 const qv = await loadQV(new URL('./qv_wasm.wasm', import.meta.url));
 ```
 
 ## Cloudflare Workers
 
 ```js
-import qvWasm from '@quantumvault/wasm/qv_wasm.wasm';
-import { loadQVFromModule } from '@quantumvault/wasm';
+import qvWasm from '@sigvault/wasm/qv_wasm.wasm';
+import { loadQVFromModule } from '@sigvault/wasm';
 
 const qv = await loadQVFromModule(qvWasm);
 ```

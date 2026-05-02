@@ -1,4 +1,4 @@
-# Line-ending rules for QuantumVault.
+# Line-ending rules for Sigvault.
 #
 # Rationale: Rust's `cargo vendor` writes a JSON checksum for every
 # vendored file. If git converts LF → CRLF on commit (Windows default

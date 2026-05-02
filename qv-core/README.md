@@ -1,6 +1,6 @@
 # qv-core
 
-The Rust core of [QuantumVault](https://github.com/007krcs/quantum-vault) —
+The Rust core of [Sigvault](https://github.com/007krcs/quantum-vault) —
 post-quantum cryptographic tokens that are quantum-safe, authenticated,
 encrypted, and replay-protected.
 

@@ -1,7 +1,7 @@
 {
-  "name": "@quantumvault/wasm",
+  "name": "@sigvault/wasm",
   "version": "4.2.0",
-  "description": "QuantumVault WebAssembly build — ML-DSA-87 post-quantum tokens in ~127 KB of wasm. Runs in browsers, Node, Deno, Bun, Cloudflare Workers.",
+  "description": "Sigvault WebAssembly build — ML-DSA-87 post-quantum tokens in ~127 KB of wasm. Runs in browsers, Node, Deno, Bun, Cloudflare Workers.",
   "type": "module",
   "main": "./index.mjs",
   "module": "./index.mjs",
@@ -33,8 +33,8 @@
     "cloudflare-workers",
     "deno"
   ],
-  "author": "QuantumVault contributors",
-  "license": "Apache-2.0",
+  "author": "Sigvault contributors",
+  "license": "AGPL-3.0-only",
   "homepage": "https://github.com/007krcs/quantum-vault#readme",
   "bugs": {
     "url": "https://github.com/007krcs/quantum-vault/issues"

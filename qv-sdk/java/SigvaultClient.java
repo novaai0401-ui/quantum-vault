@@ -1,5 +1,5 @@
 /**
- * QuantumVault v3.0 — Java SDK
+ * Sigvault v3.0 — Java SDK
  * ==============================
  * No external dependencies — uses only java.net.http (Java 11+).
  *
@@ -7,7 +7,7 @@
  *           Android API 26+, GraalVM Native Image.
  *
  * Usage:
- *   QuantumVaultClient qv = new QuantumVaultClient("http://localhost:7433");
+ *   SigvaultClient qv = new SigvaultClient("http://localhost:7433");
  *   String keyId = qv.keygen("my-service");
  *   String token = qv.issue(keyId, Map.of("sub","user-1","role","admin"));
  *   Map<?,?> result = qv.verify(keyId, token);
@@ -19,12 +19,12 @@ import java.time.Duration;
 import java.util.*;
 import java.io.*;
 
-public class QuantumVaultClient {
+public class SigvaultClient {
 
     private final String baseUrl;
     private final HttpClient http;
 
-    public QuantumVaultClient(String baseUrl) {
+    public SigvaultClient(String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length()-1) : baseUrl;
         this.http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -133,10 +133,10 @@ public class QuantumVaultClient {
     // ── Demo main ─────────────────────────────────────────────────────────────
 
     public static void main(String[] args) throws Exception {
-        QuantumVaultClient qv = new QuantumVaultClient("http://localhost:7433");
+        SigvaultClient qv = new SigvaultClient("http://localhost:7433");
 
         System.out.println("\n╔══════════════════════════════════════════╗");
-        System.out.println("║  QuantumVault v3.0 — Java SDK Demo       ║");
+        System.out.println("║  Sigvault v3.0 — Java SDK Demo       ║");
         System.out.println("╚══════════════════════════════════════════╝\n");
 
         // Health

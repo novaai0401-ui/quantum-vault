@@ -1,5 +1,5 @@
 /*
- * QuantumVault — C ABI header
+ * Sigvault — C ABI header
  * ===========================
  * ABI version 2. Generated from qv-ffi/src/lib.rs.
  * v2 adds Falcon-512 / Falcon-1024 alongside ML-DSA-87.

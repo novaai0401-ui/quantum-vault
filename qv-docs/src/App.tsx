@@ -14,7 +14,7 @@ function Nav() {
     <header className="qv-nav">
       <div className="qv-nav-inner">
         <Link to="/" className="qv-brand">
-          QuantumVault<span className="dot">.</span>
+          Sigvault<span className="dot">.</span>
         </Link>
         <NavLink to="/quickstart"   className={link}>Quickstart</NavLink>
         <NavLink to="/concepts"     className={link}>Concepts</NavLink>

@@ -3,13 +3,13 @@ name    = "qv-ffi"
 version = "0.1.0"
 edition = "2021"
 
-# Sovereign C ABI for QuantumVault.
+# Sovereign C ABI for Sigvault.
 # Build:  cargo build -p qv-ffi --release
 # Output: target/release/qv.dll  (Windows)
 #         target/release/libqv.so (Linux)
 #         target/release/libqv.dylib (macOS)
 #
-# Any language with FFI can now call QuantumVault without HTTP:
+# Any language with FFI can now call Sigvault without HTTP:
 #   Python:  ctypes.CDLL("qv.dll")
 #   Go:      cgo
 #   Ruby:    FFI

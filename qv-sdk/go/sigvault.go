@@ -1,17 +1,17 @@
-// QuantumVault v3.0 — Go SDK
+// Sigvault v3.0 — Go SDK
 // ===========================
 // No external dependencies — uses only stdlib net/http + encoding/json.
 //
 // Compatible with: Go 1.18+, standard library only.
 //
 // Usage:
-//   qv := quantumvault.NewClient("http://localhost:7433")
+//   qv := sigvault.NewClient("http://localhost:7433")
 //   keyId, _ := qv.Keygen("go-demo")
 //   token, _ := qv.Issue(keyId, map[string]string{"sub":"user-1","role":"admin"})
 //   result, _ := qv.Verify(keyId, token)
 //   fmt.Println(result.Claims)
 
-package quantumvault
+package sigvault
 
 import (
 	"bytes"
@@ -22,13 +22,13 @@ import (
 	"time"
 )
 
-// Client is the QuantumVault REST client.
+// Client is the Sigvault REST client.
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
 }
 
-// NewClient creates a new QuantumVault client.
+// NewClient creates a new Sigvault client.
 func NewClient(baseURL string) *Client {
 	return &Client{
 		BaseURL: baseURL,

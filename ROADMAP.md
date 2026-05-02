@@ -13,7 +13,7 @@ Last updated: **2026-04-20** (v4.2.0 shipped).
 Shipped across 5 registries:
 
 - **npm** — `@sigvault/sdk`, `@sigvault/wasm`
-- **PyPI** — `quantumvault` (REST client)
+- **PyPI** — `sigvault` (REST client)
 - **crates.io** — `qv-core` (ML-DSA-87 + Falcon-512/1024)
 - **GHCR** — `ghcr.io/007krcs/qv-server:4.2.0` (multi-arch)
 - **GitHub Releases** — prebuilt `libqv.{so,dylib,dll}` for 5 platforms
@@ -134,7 +134,7 @@ Theme: **drop into an existing IdP-centric stack.**
 | **R-4.5.3** | Per-verifier encrypt keys via ML-KEM-1024 envelope encryption. | C-3 |
 | **R-4.5.4** | Hybrid `Dual` suite implementation (ML-DSA-87 + Ed25519). | C-8 |
 
-**Success metric:** `pip install quantumvault` issues & verifies
+**Success metric:** `pip install sigvault` issues & verifies
 offline at >10 k ops/sec on a laptop; per-verifier encryption
 end-to-end.
 

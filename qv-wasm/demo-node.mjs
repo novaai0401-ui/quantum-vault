@@ -1,5 +1,5 @@
 /**
- * QuantumVault v4.1 — WASM host demo (Node.js)
+ * Sigvault v4.1 — WASM host demo (Node.js)
  * ==============================================
  * Loads qv_wasm.wasm with only Node stdlib. No wasm-bindgen, no npm.
  * Proves the custom getrandom shim works end-to-end.
@@ -35,7 +35,7 @@ const ex = mod.instance.exports;
 memory = ex.memory;
 
 console.log('\n================================================');
-console.log('  QuantumVault v4.1 — WASM host demo (Node)');
+console.log('  Sigvault v4.1 — WASM host demo (Node)');
 console.log('================================================');
 console.log(`  wasm bytes       : ${bytes.length.toLocaleString()}`);
 console.log(`  sk_len / vk_len  : ${ex.qv_wasm_sk_len()} / ${ex.qv_wasm_vk_len()}`);
@@ -61,7 +61,7 @@ if (rc !== 0) throw new Error(`keygen rc=${rc}`);
 console.log(`  keygen           : ${kgMs.toFixed(1)} ms  (custom getrandom OK)`);
 
 // --- sign ------------------------------------------------------------------
-const msg = new TextEncoder().encode('QuantumVault WASM: hello from Node');
+const msg = new TextEncoder().encode('Sigvault WASM: hello from Node');
 const msgPtr = alloc(msg.length);
 writeMem(msgPtr, msg);
 const sigPtr = alloc(SIG);

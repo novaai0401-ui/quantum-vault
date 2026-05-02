@@ -90,7 +90,7 @@ Point your scrape job at `/v3/metrics`:
 
 ```yaml
 scrape_configs:
-  - job_name: quantumvault
+  - job_name: sigvault
     scrape_interval: 15s
     authorization:
       type: Bearer

@@ -1,5 +1,5 @@
 """
-QuantumVault v4.0 — Python FFI Demo
+Sigvault v4.0 — Python FFI Demo
 ====================================
 Calls qv.dll directly via ctypes (Python stdlib). NO HTTP. NO server.
 NO pip packages. The DLL is the library.
@@ -53,7 +53,7 @@ qv.qv_verify.restype  = ctypes.c_int32
 SK_LEN, VK_LEN, SIG_LEN = qv.qv_sk_len(), qv.qv_vk_len(), qv.qv_sig_len()
 
 print("\n================================================")
-print("  QuantumVault v4.0 -- Python FFI Demo")
+print("  Sigvault v4.0 -- Python FFI Demo")
 print("  ctypes | NO HTTP | NO npm | NO pip")
 print("================================================\n")
 print(f"OK DLL        : {DLL_PATH}")
@@ -69,7 +69,7 @@ assert rc == 0, f"keygen rc={rc}"
 print(f"[1] Keygen    : {(time.perf_counter()-t0)*1000:6.1f} ms   vk[0:8]={vk.raw[:8].hex()}")
 
 # ── [2] Sign ─────────────────────────────────────────────────────────────────
-msg = b"QuantumVault sovereign -- Python says hi"
+msg = b"Sigvault sovereign -- Python says hi"
 sig = ctypes.create_string_buffer(SIG_LEN)
 t0  = time.perf_counter()
 rc  = qv.qv_sign(sk, SK_LEN, msg, len(msg), sig, SIG_LEN)

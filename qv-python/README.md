@@ -1,10 +1,10 @@
-# quantumvault
+# sigvault
 
-[![PyPI](https://img.shields.io/pypi/v/quantumvault.svg)](https://pypi.org/project/quantumvault/)
-[![Python versions](https://img.shields.io/pypi/pyversions/quantumvault.svg)](https://pypi.org/project/quantumvault/)
+[![PyPI](https://img.shields.io/pypi/v/sigvault.svg)](https://pypi.org/project/sigvault/)
+[![Python versions](https://img.shields.io/pypi/pyversions/sigvault.svg)](https://pypi.org/project/sigvault/)
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/007krcs/quantum-vault/blob/main/LICENSE)
 
-Python client for **[QuantumVault](https://github.com/007krcs/quantum-vault)** — post-quantum
+Python client for **[Sigvault](https://github.com/007krcs/quantum-vault)** — post-quantum
 (ML-DSA-87, Falcon-512/1024) cryptographic tokens over a zero-dependency REST API.
 
 - **Stdlib-only.** No `requests`, no `httpx`, no compiled wheels. One universal
@@ -15,7 +15,7 @@ Python client for **[QuantumVault](https://github.com/007krcs/quantum-vault)** �
 ## Install
 
 ```bash
-pip install quantumvault
+pip install sigvault
 ```
 
 ## Run the server
@@ -29,7 +29,7 @@ docker run -p 7433:7433 \
 ## 30-second demo
 
 ```python
-from quantumvault import QVClient
+from sigvault import QVClient
 
 qv = QVClient("http://localhost:7433")
 
@@ -47,7 +47,7 @@ assert out["claims"]["sub"] == "user-123"
 ## Error handling
 
 ```python
-from quantumvault import QVClient, QVVerifyError, QVHTTPError
+from sigvault import QVClient, QVVerifyError, QVHTTPError
 
 qv = QVClient("http://localhost:7433")
 try:

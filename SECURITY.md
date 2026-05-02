@@ -57,7 +57,7 @@ mitigations while long-term work continues.
 - `qv-wasm` / `@sigvault/wasm`
 - `qv-sdk` / `@sigvault/sdk`
 - `qv-server` / `ghcr.io/007krcs/qv-server`
-- `quantumvault` (PyPI REST client)
+- `sigvault` (PyPI REST client)
 - `qv-docs` (if a doc issue materially misleads users about security posture)
 - The GitHub Actions release pipeline and published artifact signatures
 

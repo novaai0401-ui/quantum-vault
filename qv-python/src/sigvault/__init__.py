@@ -1,14 +1,14 @@
 """
-quantumvault — Python client for the QuantumVault REST server.
+sigvault — Python client for the Sigvault REST server.
 
-QuantumVault issues post-quantum cryptographic tokens (ML-DSA-87, Falcon-512/1024)
+Sigvault issues post-quantum cryptographic tokens (ML-DSA-87, Falcon-512/1024)
 over a zero-dependency REST API. This package is a thin, stdlib-only client for
 that API.
 
 Quick start
 -----------
 
-    from quantumvault import QVClient
+    from sigvault import QVClient
 
     qv = QVClient("http://localhost:7433")          # or point at your qv-server
     key = qv.keygen(label="demo")                   # → {"keyId": "...", ...}

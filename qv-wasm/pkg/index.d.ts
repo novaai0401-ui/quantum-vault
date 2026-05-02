@@ -1,5 +1,5 @@
 /**
- * @quantumvault/wasm — type declarations.
+ * @sigvault/wasm — type declarations.
  */
 
 export interface QVExports {

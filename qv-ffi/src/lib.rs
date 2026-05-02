@@ -1,4 +1,4 @@
-//! QuantumVault — C ABI shared library.
+//! Sigvault — C ABI shared library.
 //!
 //! Caller-allocated output buffers. Returns 0 on success, negative on error.
 //! Pure functions only — no global state, no long-lived handles.

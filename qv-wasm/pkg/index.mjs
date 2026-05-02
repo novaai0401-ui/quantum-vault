@@ -1,5 +1,5 @@
 /**
- * @quantumvault/wasm — portable WebAssembly loader.
+ * @sigvault/wasm — portable WebAssembly loader.
  *
  * Works in:
  *   - Node 18+            (uses node:fs + node:crypto)
@@ -8,18 +8,18 @@
  *   - Cloudflare Workers  (import the .wasm module directly — see below)
  *
  * ── Node / Deno / Bun ────────────────────────────────────────────────────
- *   import { loadQV } from '@quantumvault/wasm';
+ *   import { loadQV } from '@sigvault/wasm';
  *   const qv = await loadQV();
  *   const { vkPtr, vkLen } = qv.keygen();
  *   ...
  *
  * ── Browser ──────────────────────────────────────────────────────────────
- *   import { loadQV } from '@quantumvault/wasm';
+ *   import { loadQV } from '@sigvault/wasm';
  *   const qv = await loadQV(new URL('./qv_wasm.wasm', import.meta.url));
  *
  * ── Cloudflare Workers ───────────────────────────────────────────────────
- *   import qvWasm from '@quantumvault/wasm/qv_wasm.wasm';
- *   import { loadQVFromModule } from '@quantumvault/wasm';
+ *   import qvWasm from '@sigvault/wasm/qv_wasm.wasm';
+ *   import { loadQVFromModule } from '@sigvault/wasm';
  *   const qv = await loadQVFromModule(qvWasm);
  */
 

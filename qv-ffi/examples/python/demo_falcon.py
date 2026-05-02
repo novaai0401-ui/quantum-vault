@@ -1,5 +1,5 @@
 """
-QuantumVault v4.1 -- Falcon FFI Demo
+Sigvault v4.1 -- Falcon FFI Demo
 =====================================
 Proves Falcon-512 / Falcon-1024 via the same qv.dll, side-by-side with
 ML-DSA-87. Focus: signature size (the whole point of shipping Falcon).
@@ -44,11 +44,11 @@ for fam in ("qv_falcon512_verify", "qv_falcon1024_verify"):
     getattr(qv, fam).restype  = ctypes.c_int32
 
 print("\n=============================================================")
-print("  QuantumVault v4.1 -- Falcon vs ML-DSA-87 (Python FFI)")
+print("  Sigvault v4.1 -- Falcon vs ML-DSA-87 (Python FFI)")
 print("=============================================================")
 print(f"  ABI version: {qv.qv_abi_version()}  (2 = Falcon-enabled)\n")
 
-MSG = b"QuantumVault v4.1 -- size matters for JWT-class tokens"
+MSG = b"Sigvault v4.1 -- size matters for JWT-class tokens"
 
 def run(label, sk_len, vk_len, sig_max, keygen, sign, verify, variable_sig):
     sk  = ctypes.create_string_buffer(sk_len)

@@ -22,8 +22,13 @@
 # Layers: 4 (base, user, copy, runtime). No build stage — there's nothing
 # to compile, the source IS the artefact.
 
+# Pin the base by digest AND tag. The digest is the supply-chain anchor:
+# a registry compromise that swaps a tag (the 2024 Docker Hub
+# typosquatting incidents proved this is a real risk) cannot swap a
+# pinned digest. Update both together when bumping Node.
 ARG NODE_VERSION=20.18.1-alpine3.20
-FROM node:${NODE_VERSION} AS runtime
+ARG NODE_DIGEST=sha256:f8578958d4b9b1d21b7ff04ce3b395601ad20d020468bc359b4c4416150e244f
+FROM node:${NODE_VERSION}@${NODE_DIGEST} AS runtime
 
 LABEL org.opencontainers.image.title="Sigvault Server"
 LABEL org.opencontainers.image.description="Post-quantum token REST server (ML-DSA-87, Falcon-512/1024) — zero npm dependencies, Node stdlib only."

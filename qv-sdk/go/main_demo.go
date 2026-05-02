@@ -1,5 +1,5 @@
-// go run main_demo.go quantumvault.go
-package quantumvault
+// go run main_demo.go sigvault.go
+package sigvault
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ func RunDemo() {
 	qv := NewClient("http://localhost:7433")
 
 	fmt.Println("\n╔══════════════════════════════════════════╗")
-	fmt.Println("║  QuantumVault v3.0 — Go SDK Demo         ║")
+	fmt.Println("║  Sigvault v3.0 — Go SDK Demo         ║")
 	fmt.Println("╚══════════════════════════════════════════╝\n")
 
 	// Health

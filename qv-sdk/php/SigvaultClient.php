@@ -1,6 +1,6 @@
 <?php
 /**
- * QuantumVault v3.0 — PHP SDK
+ * Sigvault v3.0 — PHP SDK
  * ==============================
  * No Composer dependencies — uses built-in curl extension (enabled by default).
  *
@@ -8,14 +8,14 @@
  *                  Drupal, CodeIgniter, bare PHP scripts.
  *
  * Usage:
- *   $qv    = new QuantumVaultClient('http://localhost:7433');
+ *   $qv    = new SigvaultClient('http://localhost:7433');
  *   $keyId = $qv->keygen('php-demo');
  *   $token = $qv->issue($keyId, ['sub' => 'user-1', 'role' => 'admin']);
  *   $out   = $qv->verify($keyId, $token);
  *   echo $out['claims']['sub'];
  */
 
-class QuantumVaultClient
+class SigvaultClient
 {
     private string $base;
     private int    $timeout;
@@ -94,10 +94,10 @@ class QuantumVaultClient
 
 // ── Demo ─────────────────────────────────────────────────────────────────────
 
-$qv = new QuantumVaultClient('http://localhost:7433');
+$qv = new SigvaultClient('http://localhost:7433');
 
 echo "\n╔══════════════════════════════════════════╗\n";
-echo "║  QuantumVault v3.0 — PHP SDK Demo        ║\n";
+echo "║  Sigvault v3.0 — PHP SDK Demo        ║\n";
 echo "╚══════════════════════════════════════════╝\n\n";
 
 $h = $qv->health();

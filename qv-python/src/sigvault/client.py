@@ -1,5 +1,5 @@
 """
-Stdlib-only HTTP client for the QuantumVault REST server.
+Stdlib-only HTTP client for the Sigvault REST server.
 
 No third-party dependencies. Works on any Python 3.8+ on any platform
 (Linux, macOS, Windows, WASM) without compiled wheels.
@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 
 class QVError(Exception):
-    """Base class for all quantumvault errors."""
+    """Base class for all sigvault errors."""
 
 
 class QVHTTPError(QVError):
@@ -34,7 +34,7 @@ class QVVerifyError(QVError):
 
 class QVClient:
     """
-    Thin REST client for a QuantumVault server.
+    Thin REST client for a Sigvault server.
 
     Parameters
     ----------

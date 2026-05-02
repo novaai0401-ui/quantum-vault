@@ -1,11 +1,11 @@
-# QuantumVault v3.0 — Ruby SDK
+# Sigvault v3.0 — Ruby SDK
 # ==============================
 # No gems needed — uses stdlib net/http + json.
 #
 # Compatible with: Ruby 2.7+, Rails 6+, Sinatra, Hanami, plain scripts.
 #
 # Usage:
-#   qv     = QuantumVault::Client.new("http://localhost:7433")
+#   qv     = Sigvault::Client.new("http://localhost:7433")
 #   key_id = qv.keygen("ruby-demo")
 #   token  = qv.issue(key_id, sub: "user-1", role: "admin")
 #   result = qv.verify(key_id, token)
@@ -15,7 +15,7 @@ require 'net/http'
 require 'json'
 require 'uri'
 
-module QuantumVault
+module Sigvault
   class Error < StandardError
     attr_reader :code
     def initialize(code, message)
@@ -85,10 +85,10 @@ end
 # ── Demo ──────────────────────────────────────────────────────────────────────
 if __FILE__ == $0
   require 'benchmark'
-  qv = QuantumVault::Client.new("http://localhost:7433")
+  qv = Sigvault::Client.new("http://localhost:7433")
 
   puts "\n╔══════════════════════════════════════════╗"
-  puts "║  QuantumVault v3.0 — Ruby SDK Demo       ║"
+  puts "║  Sigvault v3.0 — Ruby SDK Demo       ║"
   puts "╚══════════════════════════════════════════╝\n\n"
 
   h = qv.health
@@ -117,7 +117,7 @@ if __FILE__ == $0
   begin
     qv.verify(key_id, bad)
     puts "  ✘ Should have rejected tampered token!"
-  rescue QuantumVault::Error => e
+  rescue Sigvault::Error => e
     puts "  ✔ Tampered token rejected: #{e}"
   end
 

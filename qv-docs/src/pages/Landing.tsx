@@ -9,7 +9,7 @@ export default function Landing() {
       <section style={{ padding: '40px 0 10px' }}>
         <h1>Post-quantum tokens you can run anywhere.</h1>
         <p className="lead">
-          QuantumVault is a sovereign token system built on NIST-standardised
+          Sigvault is a sovereign token system built on NIST-standardised
           post-quantum signatures (ML-DSA-87, Falcon-512/1024). One auditable
           Rust core, three embedding surfaces — native FFI, portable WASM,
           and a zero-dependency REST server — so you can use it from Python,
@@ -41,7 +41,7 @@ export default function Landing() {
       <p>
         Most token libraries either depend on a large npm/pip supply chain
         that can ship malware overnight, or are locked to one language.
-        QuantumVault takes the opposite position: <b>one auditable core in
+        Sigvault takes the opposite position: <b>one auditable core in
         Rust, multiple narrow embedding surfaces, and no runtime package
         manager</b>. The Node server uses only Node's stdlib; the native
         library is a single <code>qv.dll</code>/<code>libqv.so</code>;

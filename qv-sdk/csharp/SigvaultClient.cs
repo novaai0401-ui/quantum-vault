@@ -1,5 +1,5 @@
 /**
- * QuantumVault v3.0 — C# / .NET SDK
+ * Sigvault v3.0 — C# / .NET SDK
  * =====================================
  * No NuGet packages needed — uses System.Net.Http + System.Text.Json (built-in since .NET 5).
  *
@@ -7,7 +7,7 @@
  *                  Unity 2021+, Blazor, Azure Functions, AWS Lambda .NET.
  *
  * Usage:
- *   var qv     = new QuantumVaultClient("http://localhost:7433");
+ *   var qv     = new SigvaultClient("http://localhost:7433");
  *   var keyId  = await qv.KeygenAsync("my-service");
  *   var token  = await qv.IssueAsync(keyId, new() { ["sub"]="user-1", ["role"]="admin" });
  *   var result = await qv.VerifyAsync(keyId, token);
@@ -23,12 +23,12 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Diagnostics;
 
-public class QuantumVaultClient : IDisposable
+public class SigvaultClient : IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _base;
 
-    public QuantumVaultClient(string baseUrl = "http://localhost:7433")
+    public SigvaultClient(string baseUrl = "http://localhost:7433")
     {
         _base = baseUrl.TrimEnd('/');
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
@@ -123,7 +123,7 @@ public class QuantumVaultClient : IDisposable
         var resp    = await _http.PostAsync(_base + path, content);
         var raw     = await resp.Content.ReadAsStringAsync();
         if (!resp.IsSuccessStatusCode)
-            throw new HttpRequestException($"QuantumVault error {(int)resp.StatusCode}: {raw}");
+            throw new HttpRequestException($"Sigvault error {(int)resp.StatusCode}: {raw}");
         return JsonSerializer.Deserialize<T>(raw)
                ?? throw new Exception("null response from " + path);
     }
@@ -134,10 +134,10 @@ public class QuantumVaultClient : IDisposable
 
     public static async Task Main(string[] args)
     {
-        using var qv = new QuantumVaultClient("http://localhost:7433");
+        using var qv = new SigvaultClient("http://localhost:7433");
 
         Console.WriteLine("\n╔══════════════════════════════════════════╗");
-        Console.WriteLine("║  QuantumVault v3.0 — C# SDK Demo         ║");
+        Console.WriteLine("║  Sigvault v3.0 — C# SDK Demo         ║");
         Console.WriteLine("╚══════════════════════════════════════════╝\n");
 
         // Health

@@ -3,13 +3,13 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name            = "quantumvault"
+name            = "sigvault"
 version         = "4.2.0"
-description     = "Post-quantum (ML-DSA-87 / Falcon) cryptographic tokens — Python client for the QuantumVault REST server."
+description     = "Post-quantum (ML-DSA-87 / Falcon) cryptographic tokens — Python client for the Sigvault REST server."
 readme          = "README.md"
 license         = { text = "Apache-2.0" }
 requires-python = ">=3.8"
-authors         = [{ name = "QuantumVault contributors" }]
+authors         = [{ name = "Sigvault contributors" }]
 keywords        = ["post-quantum", "pqc", "ml-dsa", "dilithium", "falcon", "jwt", "tokens", "crypto"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -34,7 +34,7 @@ Issues        = "https://github.com/007krcs/quantum-vault/issues"
 Documentation = "https://github.com/007krcs/quantum-vault#readme"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quantumvault"]
+packages = ["src/sigvault"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/quantumvault", "README.md", "LICENSE"]
+include = ["src/sigvault", "README.md", "LICENSE"]

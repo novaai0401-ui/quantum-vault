@@ -1,5 +1,5 @@
 /*
- * QuantumVault v4.0 - C# DllImport Demo
+ * Sigvault v4.0 - C# DllImport Demo
  * =======================================
  * Calls qv.dll directly via P/Invoke. NO HTTP. NO NuGet packages.
  *
@@ -28,7 +28,7 @@ internal static class Qv {
 internal class Program {
     static int Main() {
         Console.WriteLine("\n================================================");
-        Console.WriteLine("  QuantumVault v4.0 -- C# FFI Demo");
+        Console.WriteLine("  Sigvault v4.0 -- C# FFI Demo");
         Console.WriteLine("  P/Invoke | NO HTTP | NO NuGet");
         Console.WriteLine("================================================\n");
         Console.WriteLine($"ABI version: {Qv.qv_abi_version()}");
@@ -36,7 +36,7 @@ internal class Program {
         Console.WriteLine($"Sizes      : sk={SK} vk={VK} sig={SIG}\n");
 
         byte[] sk = new byte[SK], vk = new byte[VK], sig = new byte[SIG];
-        byte[] msg = Encoding.UTF8.GetBytes("QuantumVault sovereign -- C# says hi");
+        byte[] msg = Encoding.UTF8.GetBytes("Sigvault sovereign -- C# says hi");
 
         var sw = Stopwatch.StartNew();
         if (Qv.qv_keygen(sk, SK, vk, VK) != 0) { Console.WriteLine("keygen FAILED"); return 1; }

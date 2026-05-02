@@ -6,7 +6,7 @@ use qv_core::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "qv", about = "QuantumVault v3.0 — Post-Quantum Token CLI", version = "3.0.0")]
+#[command(name = "qv", about = "Sigvault v3.0 — Post-Quantum Token CLI", version = "3.0.0")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -24,7 +24,7 @@ enum Command {
         ek_out: PathBuf,
     },
 
-    /// Issue a new QuantumVault token.
+    /// Issue a new Sigvault token.
     Issue {
         #[arg(long)]
         sk: PathBuf,
@@ -53,7 +53,7 @@ enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Verify a QuantumVault token.
+    /// Verify a Sigvault token.
     Verify {
         #[arg(long)]
         vk: PathBuf,
@@ -208,7 +208,7 @@ fn cmd_inspect(token_arg: String) -> anyhow::Result<()> {
     let raw = QVRawToken::from_bytes(&bytes)?;
     let h = &raw.header;
 
-    println!("QuantumVault Token Inspection");
+    println!("Sigvault Token Inspection");
     println!("  version      : {:#06x}", qv_core::VERSION);
     println!("  suite        : {} ({:#04x})", h.suite.name(), h.suite.as_byte());
     println!("  token_type   : {:?} ({:#04x})", h.token_type, h.token_type.as_byte());

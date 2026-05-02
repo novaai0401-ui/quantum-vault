@@ -1,14 +1,14 @@
 """
-QuantumVault v3.0 — Python SDK
+Sigvault v3.0 — Python SDK
 ================================
 pip install requests   # only dependency
 
 Works with Python 3.8+ on Windows, macOS, Linux, ARM, RISC-V — anywhere Python runs.
-Talks to the QuantumVault REST API server over HTTP.
+Talks to the Sigvault REST API server over HTTP.
 
 Usage:
-    from quantumvault import QuantumVaultClient
-    qv  = QuantumVaultClient("http://localhost:7433")
+    from sigvault import SigvaultClient
+    qv  = SigvaultClient("http://localhost:7433")
     key = qv.keygen(label="my-service")
     tok = qv.issue(key["keyId"], {"sub": "user-1", "role": "admin"})
     out = qv.verify(key["keyId"], tok["tokenHex"])
@@ -20,14 +20,14 @@ import json
 from typing import Optional, Dict, Any
 
 
-class QuantumVaultError(Exception):
+class SigvaultError(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(f"[{code}] {message}")
         self.code = code
 
 
-class QuantumVaultClient:
-    """Thread-safe HTTP client for the QuantumVault REST API."""
+class SigvaultClient:
+    """Thread-safe HTTP client for the Sigvault REST API."""
 
     def __init__(self, base_url: str = "http://localhost:7433", timeout: int = 30):
         self.base  = base_url.rstrip("/")
@@ -45,7 +45,7 @@ class QuantumVaultClient:
         data = resp.json()
         if not resp.ok:
             err = data.get("error", {})
-            raise QuantumVaultError(err.get("code", "UNKNOWN"), err.get("message", str(resp.status_code)))
+            raise SigvaultError(err.get("code", "UNKNOWN"), err.get("message", str(resp.status_code)))
         return data
 
     def _get(self, path: str) -> Dict:
@@ -135,7 +135,7 @@ class QuantumVaultClient:
             }
 
         Raises:
-            QuantumVaultError if the token is invalid, expired, or tampered.
+            SigvaultError if the token is invalid, expired, or tampered.
         """
         return self._post("/v3/token/verify", {"keyId": key_id, "token": token})
 
@@ -153,10 +153,10 @@ if __name__ == "__main__":
     import sys, time
 
     SERVER = "http://localhost:7433"
-    qv = QuantumVaultClient(SERVER)
+    qv = SigvaultClient(SERVER)
 
     print("\n╔══════════════════════════════════════════╗")
-    print("║  QuantumVault v3.0 — Python SDK Demo     ║")
+    print("║  Sigvault v3.0 — Python SDK Demo     ║")
     print("╚══════════════════════════════════════════╝\n")
 
     # Health check
@@ -208,7 +208,7 @@ if __name__ == "__main__":
         qv.verify(key["keyId"], bad_token)
         print("  ✘ Should have rejected tampered token!")
         sys.exit(1)
-    except QuantumVaultError as e:
+    except SigvaultError as e:
         print(f"  ✔ Tampered token rejected: {e}")
 
     print("\n╔══════════════════════════════════════════╗")

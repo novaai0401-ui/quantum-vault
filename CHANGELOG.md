@@ -13,6 +13,45 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Polyglot rebrand**: "QuantumVault" → "Sigvault" across every
+  language and surface. Python module `quantumvault` → `sigvault`,
+  SDK adapter classes (Go / Java / PHP / C# / Ruby /Python) all
+  renamed to `SigvaultClient` / `SigvaultError`. Rust crates,
+  WASM, FFI, CLI, docs site all rebranded. Wire-format magic
+  `0x51564C54` ("QVLT"), env-var prefix `QV_*`, and directory
+  names `qv-*` are deliberately preserved (operator + token
+  compatibility).
+- **Multi-licence policy** documented in `LICENSING.md`:
+  - Server / core / CLI / FFI / WASM → **AGPL-3.0-only**
+  - SDK packages (npm + Python + Go + Java + PHP + C# + Ruby) → **Apache-2.0**
+  - Specification + docs → **CC BY 4.0**
+  - Helm chart + ops → **Apache-2.0**
+  Replaces the prior single Apache-2.0 file with a per-component
+  split. AGPL was chosen over BUSL-1.1 because it is a standard
+  SPDX licence with no custom drafting and no expiring grants.
+- **Governance documents**: `CONTRIBUTING.md` (with explicit
+  zero-dep + DCO sign-off rules), `CODE_OF_CONDUCT.md`,
+  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,security_concern}.md`,
+  and `.github/PULL_REQUEST_TEMPLATE.md`.
+- **`qv-ops/scripts/dep-audit.mjs`**: machine-enforced supply-chain
+  policy. Asserts qv-server has zero npm deps, qv-sdk has only the
+  3-package Noble allowlist, qv-wasm has zero deps, qv-python is
+  stdlib-only, and language adapters carry no vendored manifests
+  (`go.mod`, `pom.xml`, `requirements.txt`, etc.). Backed by
+  `qv-server/test/dep-audit.test.mjs` so CI rejects any drift.
+  Caught a stale 68-package `package-lock.json` left behind in
+  `qv-server/` that the rest of the suite had been quietly tolerating.
+- **CI workflow `.github/workflows/ci.yml`**: dep-audit, conformance
+  harness, full test matrix (Linux + macOS + Windows × Node 20 + 22),
+  and SBOM verification on every push and PR.
+- **Docker base pinned by digest** (`node:20.18.1-alpine3.20@sha256:f857…
+  244f`). A tag swap in a compromised registry cannot substitute the
+  image.
+- **Cosign keyless signing + SBOM attestation** in the release
+  workflow. Each pushed image is signed against its OIDC identity
+  (`repo:org/quantum-vault:ref:…`) and gets a CycloneDX 1.5 SBOM
+  attached as an OCI artefact. Operators verify with
+  `cosign verify --certificate-identity-regexp …` before deploy.
 - **Phase 5 conformance harness**:
   - `qv-spec/test-vectors/harness.mjs` — zero-dep runner that loads
     `vectors.json`, dispatches on `vector.kind`, and compares results
@@ -249,7 +288,7 @@ major language ecosystem can install it natively.
   with auto-wired `qv_host_random` for every JS runtime.
 - **`qv-core`** on crates.io — full Rust library with optional
   `falcon` feature (requires a C toolchain).
-- **`quantumvault`** on PyPI — stdlib-only REST client, Python 3.8+,
+- **`sigvault`** on PyPI — stdlib-only REST client, Python 3.8+,
   one universal `py3-none-any` wheel.
 - **`ghcr.io/007krcs/qv-server`** on GHCR — multi-arch
   (`linux/amd64` + `linux/arm64`) Docker image, non-root, zero npm
