@@ -105,7 +105,11 @@ If you are auditing the code, read all of them.
     reproducible Dockerfile, the Helm chart, and the SBOM that proves
     zero deps. The artefacts that let any language and any cluster
     integrate qv-server without reading qv-server source.
-21. [**Conformance, Trademark, and the Licence Boundary**](./21-conformance-and-licensing.md)
+21. [**Master Key Rotation**](./22-master-key-rotation.md) — the
+    `rotate-master.mjs` surgical path: same keyIds, same tokens, new
+    master. Crash-safety analysis and post-rotation validation
+    checklist.
+22. [**Conformance, Trademark, and the Licence Boundary**](./21-conformance-and-licensing.md)
     — The 24 conformance test vectors (chain-advance + claims), the
     "Sigvault Verified" badge, the trademark, and the BUSL-1.1
     additional-use grant that keeps the project sustainable while the

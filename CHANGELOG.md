@@ -13,6 +13,23 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Master-key rotation tool** (`qv-server/rotate-master.mjs`).
+  Compliance-driven shops need periodic master-key rotation; this is
+  the surgical path that preserves keyIds and existing tokens. Dry-run
+  by default; `--confirm` writes. Refuses to run while qv-server holds
+  the writer-lock. Atomic durable writes for both `keystore.json` and
+  `master.key`; originals retained as `.bak.<iso-ts>`. Re-seals every
+  entry under the new master (AEAD-AAD bound to keyId). Migrates
+  legacy plaintext entries to sealed in the same operation. 7 unit
+  tests covering dry-run, re-seal correctness, backup creation,
+  OPEN_FAILED on wrong master, missing keystore, legacy migration,
+  idempotent round-trip. New chapter 22 in the storybook covers the
+  ops protocol and crash-safety analysis.
+- **Honest L9 documentation update.** L9 (Falcon HTTP exposure) is
+  now correctly marked as v4.4 work with a three-option evaluation
+  (pure-JS Falcon = multi-week + side-channel risk; WASM Falcon =
+  C-toolchain build-system work; child-process bridge = 100ms
+  per-op latency). Wire-format bytes 0x10 / 0x11 already reserved.
 - **Postgres `ChainStore` backend (zero npm deps)** — closes limitation
   L1 (single-writer MutationChain). Implements just enough of the
   Postgres frontend wire-protocol v3.0 in `qv-server/postgres.mjs` to

@@ -101,12 +101,46 @@ Shipped. See Chapter 10.
 
 ### L9 — Falcon dispatch not exposed on the HTTP surface
 
-**What.** Falcon-512 / Falcon-1024 are implemented in qv-sdk but
-`/v3/token/issue` only accepts `suite=dilithium5`.
+**What.** Falcon-512 / Falcon-1024 are implemented in `qv-core`
+(Rust + PQClean C) but the JavaScript SDK on which `qv-server` is
+built does not have a Falcon implementation. `/v3/token/issue` only
+accepts `suite=dilithium5`.
 
-**Workaround.** Call the SDK directly from your issuing service.
+**Why this is harder than it looks.**
 
-**Fix.** Add suite enum to the HTTP surface. ETA v4.3 minor.
+Falcon's reference implementation is float-heavy NTT C code from
+PQClean. Three integration paths exist; we honestly evaluated all
+three and none is a "one-PR" change:
+
+1. **Pure-JS Falcon.** Several thousand lines of float64-precision
+   NTT arithmetic with strict timing-leak requirements. Writing it
+   from scratch is multi-week and the side-channel review burden is
+   significant. There is no audited zero-dep Noble-class JS Falcon
+   today (as of v4.3).
+2. **WASM Falcon.** `qv-wasm` already excludes Falcon at the
+   `Cargo.toml` level because PQClean's C code does not compile on
+   `wasm32-unknown-unknown` without a C toolchain. Building with
+   `wasm32-wasip1` + Emscripten is feasible but requires CI changes
+   and validation that timing properties survive the WASM JIT.
+   Multi-day build-system work.
+3. **Child-process bridge to `qv-cli`.** `qv-core` has Falcon in
+   Rust; `qv-cli` does not currently expose it. We could add
+   `qv-cli falcon-sign` / `qv-cli falcon-verify` subcommands and
+   spawn a process per token. Process-startup latency is ~50–100 ms
+   per op, ruling it out for the issue hot path; only viable as an
+   admin-only, low-rate operation.
+
+**Workaround today.** Call `qv-core` directly from your issuing
+service if you need Falcon. The Rust SDK + qv-cli can both produce
+Falcon tokens that `/v3/token/verify` will (eventually) accept once
+verify-side support lands.
+
+**Fix.** Tracked as v4.4. The likely path is option 2: ship a WASM
+build that includes Falcon, host it inside the verify-pool worker
+threads, and route `/v3/token/issue?suite=falcon{512,1024}` through
+the worker. Wire format already reserves bytes `0x10` and `0x11`
+(see `qv-spec/wire-format.md`), so no wire change is needed when the
+crypto lands.
 
 ### L10 — No built-in TLS
 
