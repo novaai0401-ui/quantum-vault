@@ -13,6 +13,55 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Cross-host writer-lock fence verification.** Closes the worst
+  silent-corruption hazard: two qv-server processes on different nodes
+  sharing an NFS / EFS / SMB volume could both pass `pidAlive` and
+  `hostname` and corrupt the chain log silently. Every chain write now
+  re-reads the lease file and verifies our fence is still live;
+  `WRITER_LOCK_LOST` aborts the write before damage. 4 new unit tests.
+  See `qv-server/writer-lock.mjs:checkFence`.
+- **VK fingerprint map for O(1) keyId lookup** (operationally closes
+  L2). `POST /v3/keys/identify` accepts either a verifying-key (base64url)
+  or a 32-hex SHA3-256 fingerprint and returns the `keyId`. A caller
+  that has a token but not the keyId can now resolve it in one call,
+  without scanning every active key. The wire-format `kid` change is
+  still deferred to v5.0. 4 integration tests.
+- **OTLP/HTTP-JSON exporter** (closes L7). New `qv-server/otlp.mjs`
+  converts audit events with `traceId`/`spanId` into OTLP spans and
+  POSTs batches to an operator-supplied collector. Toggle:
+  `QV_OTLP_ENDPOINT`, `QV_OTLP_TOKEN`, `QV_OTLP_BATCH_MAX` (default
+  128), `QV_OTLP_FLUSH_MS` (default 5000). Best-effort: collector
+  failures never impact request latency. Wired in via a new auditor
+  `sink` callback so `audit.mjs` stays uncoupled from the exporter.
+  Zero deps — Node `http`/`https` only. 8 new unit tests.
+- **Zero-dep fuzz harness** (`qv-server/fuzz.mjs`). XZ-utils 2024
+  showed parsers are the soft underbelly of any cryptographic system;
+  this is the gate. Mutates inputs against the four security-sensitive
+  request-path parsers (`validateClaims`, `parseTraceparent`,
+  `sanitizeTracestate`, `matchesAny`) and asserts: no unstructured
+  errors, no partial returns, no >100 ms parses. CI runs a 10k smoke
+  on every push; nightly should run 1M. ~64k iterations/second on
+  modest hardware. Found two real fuzz-target bugs during development
+  (parseTraceparent return-shape, sanitizeTracestate null-on-bad-input
+  — both correct behaviour, fuzz expectations corrected). New
+  `test/fuzz.test.mjs` gates 10k iterations in CI.
+- **Distroless Docker variant** (`Dockerfile.distroless`). Optional
+  build target using `gcr.io/distroless/nodejs20-debian12:nonroot` —
+  no shell, no package manager, ~80 MB image with a much smaller
+  vulnerable surface than the alpine variant. Defaults to uid 65532.
+  Operators must pin `BASE_DIGEST` before production; CI gates that
+  pin before publishing.
+- **HARDENING.md** — defence-in-depth playbook for FedRAMP / PCI / HIPAA
+  workloads. Master-key tier ladder, memory hardening, core-dump
+  suppression, network surface (TLS termination + XFF stripping +
+  cross-host writer-lock), supply-chain (digest pin + cosign verify +
+  fuzz cadence), audit + observability (sensitive-key blocklist + OTLP
+  forwarding), operational hygiene checklist, and the failure modes
+  this document does NOT promise.
+- **Auditor `sink` callback** (`audit.mjs`). Optional `(record) => void`
+  fired after every audit event so exporters (OTLP today; Datadog /
+  Splunk tomorrow) can subscribe without coupling `audit.mjs` to them.
+  Sink failures are isolated — never propagate to the request handler.
 - **Polyglot rebrand**: "QuantumVault" → "Sigvault" across every
   language and surface. Python module `quantumvault` → `sigvault`,
   SDK adapter classes (Go / Java / PHP / C# / Ruby /Python) all

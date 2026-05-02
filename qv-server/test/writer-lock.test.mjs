@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 
@@ -169,6 +169,46 @@ test('allowSteal=false refuses to take over a stale lease', () => {
   assert.throws(
     () => acquireWriterLock({ dataDir: d, allowSteal: false }),
     (err) => err.code === 'WRITER_LOCK_STALE');
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('checkFence: passes when our fence is still live', () => {
+  const d = tdir();
+  const lock = acquireWriterLock({ dataDir: d });
+  assert.equal(lock.checkFence(), lock.fence);
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('checkFence: throws WRITER_LOCK_LOST when peer overtakes our fence', () => {
+  const d = tdir();
+  const lock = acquireWriterLock({ dataDir: d });
+  // Simulate a peer (different host, different holderId) stealing the lease
+  // while we were busy. This is the cross-host hazard.
+  const cur = JSON.parse(readFileSync(lock.path, 'utf8'));
+  writeFileSync(lock.path, JSON.stringify({
+    ...cur,
+    holderId: 'peer-on-other-host',
+    fence: String(BigInt(cur.fence) + 1n),
+    hostname: 'other-host',
+    pid: 12345,
+  }));
+  assert.throws(() => lock.checkFence(), (err) => err.code === 'WRITER_LOCK_LOST');
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('checkFence: throws WRITER_LOCK_LOST after release', () => {
+  const d = tdir();
+  const lock = acquireWriterLock({ dataDir: d });
+  lock.release();
+  assert.throws(() => lock.checkFence(), (err) => err.code === 'WRITER_LOCK_LOST');
+  rmSync(d, { recursive: true, force: true });
+});
+
+test('checkFence: throws WRITER_LOCK_LOST when lease file vanished', () => {
+  const d = tdir();
+  const lock = acquireWriterLock({ dataDir: d });
+  unlinkSync(lock.path);
+  assert.throws(() => lock.checkFence(), (err) => err.code === 'WRITER_LOCK_LOST');
   rmSync(d, { recursive: true, force: true });
 });
 

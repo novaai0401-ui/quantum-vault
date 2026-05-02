@@ -35,7 +35,7 @@ LABEL org.opencontainers.image.description="Post-quantum token REST server (ML-D
 LABEL org.opencontainers.image.source="https://github.com/007krcs/quantum-vault"
 LABEL org.opencontainers.image.url="https://github.com/007krcs/quantum-vault"
 LABEL org.opencontainers.image.documentation="https://github.com/007krcs/quantum-vault/tree/main/docs/story"
-LABEL org.opencontainers.image.licenses="BUSL-1.1"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
 LABEL org.opencontainers.image.vendor="007krcs"
 
 # ── Hardened runtime ────────────────────────────────────────────────────────
@@ -65,6 +65,8 @@ COPY --chown=qv:qv \
     writer-lock.mjs \
     verify-pool.mjs \
     verify-worker.mjs \
+    otlp.mjs \
+    fuzz.mjs \
     ./
 
 # Persistent data lives on a mounted volume; the container itself is

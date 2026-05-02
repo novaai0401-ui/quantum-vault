@@ -74,7 +74,12 @@ export function loadAuditConfig(env = process.env, dataDir = '.') {
  * Log writes are best-effort. If the file can't be opened we warn on
  * stderr once and fall back to stdout.
  */
-export function createAuditor({ config, now = () => new Date() } = {}) {
+export function createAuditor({ config, now = () => new Date(), sink = null } = {}) {
+  // `sink` is an optional callback `(record) => void` invoked once per
+  // audit event after the line is serialised. Used to forward events to
+  // OTLP, statsd, or anything else without coupling audit.mjs to those
+  // exporters. The sink runs synchronously but is wrapped in try/catch so
+  // a broken exporter cannot crash request processing.
   if (!config || config.disabled) {
     return { event() {}, close() {} };
   }
@@ -167,6 +172,12 @@ export function createAuditor({ config, now = () => new Date() } = {}) {
     }
     if (config.stdout) {
       try { process.stdout.write(line); } catch {}
+    }
+    if (sink) {
+      try { sink(record); } catch (e) {
+        // Sink failures are isolated: never propagate to the request handler.
+        process.stderr.write(`[audit-sink] ${e.message}\n`);
+      }
     }
   }
 

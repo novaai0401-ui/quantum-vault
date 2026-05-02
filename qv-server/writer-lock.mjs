@@ -125,6 +125,48 @@ export function acquireWriterLock(opts) {
   return {
     fence,
     path,
+    /**
+     * Cross-host fence check. Call this BEFORE every chain-log append.
+     *
+     * The hazard: two qv-server processes on different hosts that share an
+     * NFS / SMB / EFS export both pass `pidAlive` (their pids are valid on
+     * their own host) and both pass `hostname` (each matches its own
+     * `os.hostname()`). The acquire-time check cannot detect them — but
+     * one of them WILL have stolen the other's fence at boot, because the
+     * loser's prior lease will have expiresAt in the past or its hostname
+     * mismatch.
+     *
+     * The structural fix is to re-read the lease file before every write
+     * and confirm OUR fence is still the live one. If a peer stole our
+     * lease while we were running (because we hung past expiresAt),
+     * checkFence() throws `WRITER_LOCK_LOST` and the caller aborts the
+     * write. Net cost: one stat + one read per token issue (~50 µs on
+     * tmpfs, ~200 µs on NFS) — still well under the SHA3 ratchet cost.
+     */
+    checkFence() {
+      if (released) {
+        const err = new Error('WRITER_LOCK_LOST: lock already released');
+        err.code = 'WRITER_LOCK_LOST'; throw err;
+      }
+      let cur;
+      try { cur = JSON.parse(readFileSync(path, 'utf8')); }
+      catch (e) {
+        // Lease file vanished or unreadable. Treat as lost.
+        const err = new Error(
+          `WRITER_LOCK_LOST: lease at ${path} unreadable: ${e.message}`);
+        err.code = 'WRITER_LOCK_LOST'; throw err;
+      }
+      const curFence = BigInt(cur.fence ?? '0');
+      if (curFence !== fence || cur.holderId !== myId) {
+        const err = new Error(
+          `WRITER_LOCK_LOST: lease fence ${fence} (holder ${myId}) overtaken `
+          + `by fence ${curFence} (holder ${cur.holderId}, host ${cur.hostname}, `
+          + `pid ${cur.pid}); another writer stole the lease — refusing to write.`);
+        err.code = 'WRITER_LOCK_LOST';
+        throw err;
+      }
+      return fence;
+    },
     /** Bump expiresAt; throw if our fence was overtaken (we lost the lease). */
     renew() {
       if (released) throw new Error('writer lock already released');

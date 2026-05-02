@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1.7
+#
+# Sigvault Sovereign Server — DISTROLESS variant.
+#
+# Trade-off vs the alpine variant (Dockerfile):
+#   + No shell, no package manager, no busybox — far smaller attack surface.
+#   + Image weight ~80 MB (vs ~60 MB alpine), but the *vulnerable* surface
+#     is much smaller: Distroless ships only the Node runtime + glibc.
+#   + Default user is `nonroot` (uid 65532) baked into the base.
+#   - Cannot exec into the container for live debugging — that is the
+#     point. Use sidecar / kubectl ephemeral-container for diagnostics.
+#
+# Reproducible build:
+#
+#   docker build \
+#     -f qv-server/Dockerfile.distroless \
+#     --build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) \
+#     -t qv-server:distroless-$(git rev-parse --short HEAD) \
+#     qv-server
+#
+# IMPORTANT: BASE_DIGEST is intentionally left as an unpinned default for
+# this template. Production deployments MUST pin to a specific digest:
+#
+#   docker buildx imagetools inspect gcr.io/distroless/nodejs20-debian12:nonroot \
+#     --format '{{json .Manifest}}' | jq -r '.digest'
+#
+# Then build with --build-arg BASE_DIGEST=sha256:<that>.
+#
+# CI gates a digest pin before publishing the distroless image to GHCR.
+
+ARG BASE_TAG=nonroot
+ARG BASE_DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+FROM gcr.io/distroless/nodejs20-debian12:${BASE_TAG} AS runtime
+
+LABEL org.opencontainers.image.title="Sigvault Server (Distroless)"
+LABEL org.opencontainers.image.description="Post-quantum token REST server (ML-DSA-87, Falcon-512/1024) — zero npm dependencies, distroless base, no shell, no package manager."
+LABEL org.opencontainers.image.source="https://github.com/007krcs/quantum-vault"
+LABEL org.opencontainers.image.url="https://github.com/007krcs/quantum-vault"
+LABEL org.opencontainers.image.documentation="https://github.com/007krcs/quantum-vault/tree/main/docs/story"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
+LABEL org.opencontainers.image.vendor="007krcs"
+LABEL org.opencontainers.image.base.name="gcr.io/distroless/nodejs20-debian12:${BASE_TAG}"
+
+# Distroless's "nonroot" user is uid 65532 — already non-root, so we
+# don't `addgroup`/`adduser`. We just chown the runtime files.
+WORKDIR /app
+
+COPY --chown=65532:65532 \
+    server-sovereign.mjs \
+    auth.mjs \
+    audit.mjs \
+    ratelimit.mjs \
+    security.mjs \
+    shutdown.mjs \
+    metrics.mjs \
+    claims.mjs \
+    cidr.mjs \
+    trace.mjs \
+    durable.mjs \
+    chain-log.mjs \
+    master-key.mjs \
+    writer-lock.mjs \
+    verify-pool.mjs \
+    verify-worker.mjs \
+    otlp.mjs \
+    ./
+
+# /data is the operator-mounted volume. Distroless does not expose
+# `mkdir`, so the volume must be created externally (Kubernetes PVC
+# init or `docker run -v ...:/data`) and chown'd to 65532.
+VOLUME ["/data"]
+
+ENV QV_DATA_DIR=/data \
+    QV_HOST=0.0.0.0 \
+    QV_PORT=7433 \
+    QV_AUDIT_STDOUT=true \
+    NODE_OPTIONS="--enable-source-maps"
+
+EXPOSE 7433
+USER 65532:65532
+
+# Distroless's ENTRYPOINT is /nodejs/bin/node — pass the script directly.
+CMD ["server-sovereign.mjs"]
+
+# No HEALTHCHECK directive: distroless has no shell, so curl-based probes
+# do not work. Use Kubernetes httpGet probes instead — see qv-ops/helm/.

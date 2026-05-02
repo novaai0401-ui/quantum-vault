@@ -52,6 +52,7 @@ import { createMetrics, loadMetricsConfig } from './metrics.mjs';
 import { loadClaimsConfig, validateClaims }  from './claims.mjs';
 import { loadCidrConfig, matchesAny }        from './cidr.mjs';
 import { applyTrace }                        from './trace.mjs';
+import { loadOtlpConfig, createOtlpExporter } from './otlp.mjs';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
@@ -127,7 +128,21 @@ if (METRICS_CFG.enabled) {
 
 // ─── Audit log (R-4.3.6) ────────────────────────────────────────────────────
 const AUDIT_CFG = loadAuditConfig(process.env, DATA_DIR);
-const audit     = createAuditor({ config: AUDIT_CFG });
+
+// Optional OTLP export. When QV_OTLP_ENDPOINT is set, every audit event
+// that has a traceId/spanId is converted into an OTLP/JSON span and
+// batched to the configured collector. Best-effort: failures are
+// swallowed so a flaky collector cannot impact request latency.
+const OTLP_CFG = loadOtlpConfig();
+const otlp     = createOtlpExporter(OTLP_CFG);
+if (OTLP_CFG.enabled) {
+  console.log(`✔ OTLP exporter: ${OTLP_CFG.url.href} (batch=${OTLP_CFG.batchMax}, flush=${OTLP_CFG.flushMs}ms)`);
+}
+
+const audit = createAuditor({
+  config: AUDIT_CFG,
+  sink:   OTLP_CFG.enabled ? (rec) => otlp.onAuditEvent(rec) : null,
+});
 if (!AUDIT_CFG.disabled) {
   console.log(`✔ Audit log: file=${AUDIT_CFG.fileOn ? AUDIT_CFG.path : 'off'} stdout=${AUDIT_CFG.stdout}`);
 }
@@ -271,6 +286,18 @@ function saveRevoked() {
 const keystore = new Map();   // keyId → { signingKey:u8, verifyingKey:u8, encryptKey:u8, label, createdAt }
 const chains   = new Map();   // keyId → MutationChain (in RAM, persisted via append-log)
 
+// VK fingerprint → keyId. SHA3-256 of the verifying key, first 16 bytes hex.
+// Operationally closes limitation #2 (no kid in token header) without a
+// wire-format change: a verifier that doesn't know the keyId can compute
+// SHA3-256(VK)[:16].toHex() server-side from each registered VK and look up
+// O(1). Caller code that already passes keyId is unchanged. Caller code that
+// passes ONLY a token can still verify via /v3/token/identify. Real wire-
+// format kid is still on the v5.0 roadmap.
+const vkFpToKeyId = new Map();
+function fingerprintVk(vk) {
+  return createHash('sha3-256').update(vk).digest().subarray(0, 16).toString('hex');
+}
+
 function b64e(u8) { return Buffer.from(u8).toString('base64'); }
 function b64d(s)  { return new Uint8Array(Buffer.from(s, 'base64')); }
 function b64ue(u8){ return Buffer.from(u8).toString('base64url'); }
@@ -303,6 +330,7 @@ function loadKeystore() {
       signingKey, verifyingKey: b64d(v.vk), encryptKey,
       label: v.label, createdAt: v.createdAt,
     });
+    vkFpToKeyId.set(fingerprintVk(b64d(v.vk)), keyId);
     // Reload chain from append-log with full cryptographic linkage check.
     // The log's stateHash column is no longer dead weight — it must match the
     // SHA3-ratchet derivation from the seed, or the boot fails loud. On a
@@ -349,6 +377,11 @@ function saveKeystore() {
 // QV_CHAIN_FSYNC=0 (e.g. CI, tests, low-value environments).
 const CHAIN_FSYNC = process.env.QV_CHAIN_FSYNC !== '0';
 function appendChain(keyId, counter, stateHash) {
+  // Cross-host fence verification. If we share DATA_DIR with another node
+  // that stole our writer lease (NFS / SMB / EFS), this throws
+  // WRITER_LOCK_LOST before we corrupt the chain log.
+  if (WRITER_LOCK) WRITER_LOCK.checkFence();
+
   const rec = Buffer.alloc(40);
   rec.writeBigUInt64BE(BigInt(counter), 0);
   Buffer.from(stateHash).copy(rec, 8);
@@ -466,6 +499,7 @@ route('POST', '/v3/keygen', admin(async (req, res) => {
     signingKey: kp.signingKey, verifyingKey: kp.verifyingKey,
     encryptKey: kp.encryptKey, label: body.label ?? keyId, createdAt: Date.now(),
   });
+  vkFpToKeyId.set(fingerprintVk(kp.verifyingKey), keyId);
   // Seed the chain deterministically from the encrypt key so reload across
   // restarts can verify linkage from the same starting point. Without this
   // the seed would be random per-create, the chain log's stateHash column
@@ -670,6 +704,34 @@ route('POST', '/v3/token/inspect', verifyRL(async (req, res) => {
 }));
 
 // ─── Key discovery (JWKS-equivalent) ────────────────────────────────────────
+// O(1) verifying-key → keyId lookup. Closes limitation #2 operationally
+// without a wire-format change. A caller that holds a VK (from
+// /v3/keys/{keyId}/vk.bin or from prior knowledge) can compute the
+// fingerprint locally and resolve the keyId in one call.
+//
+// Body: { vkB64u: <base64url verifying key> }      OR
+//       { fingerprint: <hex 32-char SHA3-256[:16]> }
+route('POST', '/v3/keys/identify', publicRL(async (req, res) => {
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  let fp;
+  if (typeof body.fingerprint === 'string') {
+    if (!/^[0-9a-f]{32}$/i.test(body.fingerprint))
+      return err(res, 400, 'INVALID_FINGERPRINT', 'expect 32 hex chars');
+    fp = body.fingerprint.toLowerCase();
+  } else if (typeof body.vkB64u === 'string') {
+    let vk;
+    try { vk = Buffer.from(body.vkB64u.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
+    catch { return err(res, 400, 'INVALID_VK', 'vkB64u not base64url'); }
+    fp = fingerprintVk(vk);
+  } else {
+    return err(res, 400, 'INVALID_REQUEST', 'expect fingerprint or vkB64u');
+  }
+  const keyId = vkFpToKeyId.get(fp);
+  if (!keyId) return err(res, 404, 'KEY_NOT_FOUND', `no key matches fingerprint ${fp}`);
+  json(res, 200, { keyId, fingerprint: fp, revoked: revoked.has(keyId) });
+}));
+
 route('GET', '/v3/keys', publicRL((_req, res) => {
   const list = [];
   for (const [keyId, v] of keystore.entries()) {
