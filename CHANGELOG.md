@@ -13,6 +13,34 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Pluggable `ChainStore` interface** (`qv-server/chain-store.mjs`).
+  Decouples the MutationChain append-log from the file backend so v4.4
+  can swap in Postgres / etcd / S3 without touching call sites. Today
+  ships the file backend (zero behaviour change from v4.3); the
+  dispatcher rejects unknown backends with `CHAIN_STORE_UNKNOWN` and
+  documents the v4.4 backends with `CHAIN_STORE_NOT_AVAILABLE`. Toggle:
+  `QV_CHAIN_STORE=file|postgres|s3|etcd`. 9 new unit tests covering
+  load/append round-trip, tamper rejection, fsync vs no-fsync, and the
+  dispatcher contract.
+- **`POST /v3/token/verify-auto`** — verify a token without supplying
+  `keyId`. Server trial-verifies against every active (non-revoked)
+  key. O(N) over keys; N is typically ≤10 in real deployments. Closes
+  the operational UX gap when the caller has a token but not the keyId
+  and prefers a single call over identify+verify. Returns `keyId` in
+  the response body so callers can cache it.
+- **`qv-server/bench.mjs`** — end-to-end throughput + p50/p95/p99/max
+  latency benchmark against a freshly-spun-up server. Measures issue,
+  verify, and identify hot paths. Tunable via `QV_BENCH_OPS` and
+  `QV_BENCH_CONC`. Operator-facing — gives the real numbers for
+  capacity planning.
+- **Go SDK polish** (`qv-sdk/go/sigvault.go`):
+  - Context-aware API (`*Client` methods take `ctx context.Context`).
+  - Bearer admin token via `WithAdminToken(token)`.
+  - New methods: `IdentifyByVK`, `IdentifyByFingerprint`, `VerifyAuto`,
+    `Revoke`, `Live`, `Ready`.
+  - Structured `*Error` type with `Status`, `Code`, `Message`.
+  - SPDX-License-Identifier headers (Apache-2.0).
+  - Demo (`main_demo.go`) updated to context API + verify-auto path.
 - **Cross-host writer-lock fence verification.** Closes the worst
   silent-corruption hazard: two qv-server processes on different nodes
   sharing an NFS / EFS / SMB volume could both pass `pidAlive` and

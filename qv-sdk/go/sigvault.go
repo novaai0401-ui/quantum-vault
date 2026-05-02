@@ -1,50 +1,84 @@
-// Sigvault v3.0 — Go SDK
-// ===========================
-// No external dependencies — uses only stdlib net/http + encoding/json.
+// Sigvault — Go SDK
+// ===================================
+// Single-file, stdlib-only Go client for the Sigvault REST API.
 //
-// Compatible with: Go 1.18+, standard library only.
+// Compatible with: Go 1.18+. Pure stdlib (net/http, encoding/json).
+// No third-party imports — `dep-audit` rejects any change that adds them.
 //
-// Usage:
-//   qv := sigvault.NewClient("http://localhost:7433")
-//   keyId, _ := qv.Keygen("go-demo")
-//   token, _ := qv.Issue(keyId, map[string]string{"sub":"user-1","role":"admin"})
-//   result, _ := qv.Verify(keyId, token)
-//   fmt.Println(result.Claims)
+// Quick start:
+//
+//   c := sigvault.NewClient("http://localhost:7433").WithAdminToken(os.Getenv("QV_ADMIN_TOKEN"))
+//   keyId, _ := c.Keygen("go-demo")
+//   res, _   := c.Issue(keyId, map[string]any{"sub":"alice","role":"admin"})
+//   v, _     := c.Verify(keyId, res.TokenHex)
+//   fmt.Println(v.Claims)
+//
+// SPDX-License-Identifier: Apache-2.0
 
 package sigvault
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 )
 
-// Client is the Sigvault REST client.
+// ── Client ────────────────────────────────────────────────────────────────────
+
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
+	adminToken string
 }
 
-// NewClient creates a new Sigvault client.
 func NewClient(baseURL string) *Client {
 	return &Client{
-		BaseURL: baseURL,
-		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		BaseURL:    baseURL,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// ── Response types ────────────────────────────────────────────────────────────
+// WithAdminToken returns the client with the admin bearer token attached for
+// admin-only endpoints (/v3/keygen, /v3/token/issue, DELETE /v3/keys/{id}).
+func (c *Client) WithAdminToken(token string) *Client {
+	c.adminToken = token
+	return c
+}
+
+// ── Errors ────────────────────────────────────────────────────────────────────
+
+type Error struct {
+	Status  int    `json:"-"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *Error) Error() string {
+	return fmt.Sprintf("sigvault: [%d %s] %s", e.Status, e.Code, e.Message)
+}
+
+func decodeError(status int, body []byte) error {
+	var env struct {
+		Error Error `json:"error"`
+	}
+	if err := json.Unmarshal(body, &env); err == nil && env.Error.Code != "" {
+		env.Error.Status = status
+		return &env.Error
+	}
+	return &Error{Status: status, Code: "HTTP_" + http.StatusText(status), Message: string(body)}
+}
+
+// ── Response types ───────────────────────────────────────────────────────────
 
 type KeygenResponse struct {
 	KeyID           string `json:"keyId"`
 	Label           string `json:"label"`
 	VerifyingKeyB64 string `json:"verifyingKeyB64"`
-	EncryptKeyB64   string `json:"encryptKeyB64"`
 	Algorithm       string `json:"algorithm"`
 	CreatedAt       string `json:"createdAt"`
 }
@@ -61,11 +95,18 @@ type IssueResponse struct {
 }
 
 type VerifyResponse struct {
-	Valid       bool              `json:"valid"`
-	Claims      map[string]string `json:"claims"`
-	IssuedAt    string            `json:"issuedAt"`
-	TTLSecs     int               `json:"ttlSecs"`
-	MutationCtr int64             `json:"mutationCtr"`
+	Valid       bool                   `json:"valid"`
+	KeyID       string                 `json:"keyId,omitempty"` // populated by VerifyAuto
+	Claims      map[string]any         `json:"claims"`
+	IssuedAt    string                 `json:"issuedAt"`
+	TTLSecs     int                    `json:"ttlSecs"`
+	MutationCtr int64                  `json:"mutationCtr"`
+}
+
+type IdentifyResponse struct {
+	KeyID       string `json:"keyId"`
+	Fingerprint string `json:"fingerprint"`
+	Revoked     bool   `json:"revoked"`
 }
 
 type HealthResponse struct {
@@ -74,58 +115,96 @@ type HealthResponse struct {
 	Algorithm string `json:"algorithm"`
 }
 
-// ── Internal HTTP helper ──────────────────────────────────────────────────────
+// ── Internal helpers ─────────────────────────────────────────────────────────
 
-func (c *Client) post(path string, body any, out any) error {
-	b, _ := json.Marshal(body)
-	resp, err := c.HTTPClient.Post(c.BaseURL+path, "application/json", bytes.NewReader(b))
-	if err != nil {
-		return fmt.Errorf("http post: %w", err)
+func (c *Client) do(ctx context.Context, method, path string, body any, admin bool, out any) error {
+	var rdr io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rdr = bytes.NewReader(b)
 	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode >= 400 {
-		var e struct{ Error struct{ Code, Message string } `json:"error"` }
-		json.Unmarshal(data, &e)
-		return fmt.Errorf("[%s] %s", e.Error.Code, e.Error.Message)
-	}
-	return json.Unmarshal(data, out)
-}
-
-func (c *Client) get(path string, out any) error {
-	resp, err := c.HTTPClient.Get(c.BaseURL + path)
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, rdr)
 	if err != nil {
 		return err
 	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if admin {
+		if c.adminToken == "" {
+			return errors.New("sigvault: admin token required for " + path + " — call WithAdminToken first")
+		}
+		req.Header.Set("Authorization", "Bearer "+c.adminToken)
+	}
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("sigvault: %w", err)
+	}
 	defer resp.Body.Close()
-	data, _ := io.ReadAll(resp.Body)
-	return json.Unmarshal(data, out)
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return decodeError(resp.StatusCode, raw)
+	}
+	if out == nil || len(raw) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
 }
 
-// ── API ───────────────────────────────────────────────────────────────────────
+// ── Health / spec ────────────────────────────────────────────────────────────
 
-func (c *Client) Health() (*HealthResponse, error) {
+func (c *Client) Health(ctx context.Context) (*HealthResponse, error) {
 	var out HealthResponse
-	return &out, c.get("/v3/health", &out)
+	return &out, c.do(ctx, "GET", "/v3/health", nil, false, &out)
 }
 
-// Keygen generates a new ML-DSA-87 keypair. Returns keyId.
-func (c *Client) Keygen(label string) (string, error) {
-	body := map[string]string{"label": label}
+func (c *Client) Live(ctx context.Context) error {
+	return c.do(ctx, "GET", "/v3/live", nil, false, nil)
+}
+
+func (c *Client) Ready(ctx context.Context) error {
+	return c.do(ctx, "GET", "/v3/ready", nil, false, nil)
+}
+
+// ── Keys ─────────────────────────────────────────────────────────────────────
+
+func (c *Client) Keygen(ctx context.Context, label string) (string, error) {
 	var out KeygenResponse
-	if err := c.post("/v3/keygen", body, &out); err != nil {
+	body := map[string]string{"label": label}
+	if err := c.do(ctx, "POST", "/v3/keygen", body, true, &out); err != nil {
 		return "", err
 	}
 	return out.KeyID, nil
 }
 
-// Issue signs a new token with the given keyId and claims.
-func (c *Client) Issue(keyID string, claims map[string]string) (*IssueResponse, error) {
-	return c.IssueWithOptions(keyID, claims, 3600, "dilithium5", "access")
+// IdentifyByVK resolves keyId in O(1) from a verifying-key (base64url).
+// Closes limitation L2 operationally — a caller that has a token but no
+// keyId can call this once and cache the result.
+func (c *Client) IdentifyByVK(ctx context.Context, vkB64u string) (*IdentifyResponse, error) {
+	var out IdentifyResponse
+	body := map[string]string{"vkB64u": vkB64u}
+	return &out, c.do(ctx, "POST", "/v3/keys/identify", body, false, &out)
 }
 
-func (c *Client) IssueWithOptions(keyID string, claims map[string]string, ttl int, suite, tokenType string) (*IssueResponse, error) {
+func (c *Client) IdentifyByFingerprint(ctx context.Context, fp string) (*IdentifyResponse, error) {
+	var out IdentifyResponse
+	body := map[string]string{"fingerprint": fp}
+	return &out, c.do(ctx, "POST", "/v3/keys/identify", body, false, &out)
+}
+
+// Revoke (admin) marks a key revoked. Durable on disk before returning.
+func (c *Client) Revoke(ctx context.Context, keyID string) error {
+	return c.do(ctx, "DELETE", "/v3/keys/"+keyID, nil, true, nil)
+}
+
+// ── Tokens ───────────────────────────────────────────────────────────────────
+
+func (c *Client) Issue(ctx context.Context, keyID string, claims map[string]any) (*IssueResponse, error) {
+	return c.IssueWithOptions(ctx, keyID, claims, 3600, "dilithium5", "access")
+}
+
+func (c *Client) IssueWithOptions(ctx context.Context, keyID string, claims map[string]any, ttl int, suite, tokenType string) (*IssueResponse, error) {
+	var out IssueResponse
 	body := map[string]any{
 		"keyId":     keyID,
 		"claims":    claims,
@@ -133,26 +212,38 @@ func (c *Client) IssueWithOptions(keyID string, claims map[string]string, ttl in
 		"suite":     suite,
 		"tokenType": tokenType,
 	}
-	var out IssueResponse
-	return &out, c.post("/v3/token/issue", body, &out)
+	return &out, c.do(ctx, "POST", "/v3/token/issue", body, true, &out)
 }
 
-// Verify verifies a token. Returns claims on success, error on failure.
-func (c *Client) Verify(keyID, token string) (*VerifyResponse, error) {
-	body := map[string]string{"keyId": keyID, "token": token}
+func (c *Client) Verify(ctx context.Context, keyID, tokenHex string) (*VerifyResponse, error) {
 	var out VerifyResponse
-	if err := c.post("/v3/token/verify", body, &out); err != nil {
+	body := map[string]string{"keyId": keyID, "token": tokenHex}
+	if err := c.do(ctx, "POST", "/v3/token/verify", body, false, &out); err != nil {
 		return nil, err
 	}
 	if !out.Valid {
-		return nil, fmt.Errorf("token invalid")
+		return nil, &Error{Code: "TOKEN_INVALID", Message: "verify returned valid=false"}
 	}
 	return &out, nil
 }
 
-// Inspect returns the token header without cryptographic verification.
-func (c *Client) Inspect(token string) (map[string]any, error) {
-	body := map[string]string{"token": token}
+// VerifyAuto verifies without requiring the caller to know the keyId. The
+// server trial-verifies against every active (non-revoked) key.
+// Operationally closes L2.
+func (c *Client) VerifyAuto(ctx context.Context, tokenHex string) (*VerifyResponse, error) {
+	var out VerifyResponse
+	body := map[string]string{"token": tokenHex}
+	if err := c.do(ctx, "POST", "/v3/token/verify-auto", body, false, &out); err != nil {
+		return nil, err
+	}
+	if !out.Valid {
+		return nil, &Error{Code: "NO_KEY_MATCHED", Message: "no active key verified the token"}
+	}
+	return &out, nil
+}
+
+func (c *Client) Inspect(ctx context.Context, tokenHex string) (map[string]any, error) {
 	var out map[string]any
-	return out, c.post("/v3/token/inspect", body, &out)
+	body := map[string]string{"token": tokenHex}
+	return out, c.do(ctx, "POST", "/v3/token/inspect", body, false, &out)
 }

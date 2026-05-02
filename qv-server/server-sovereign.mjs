@@ -26,6 +26,7 @@ import { cpus }             from 'node:os';
 import { VerifyPool }       from './verify-pool.mjs';
 import { writeFileDurable, cleanupStaleTmp } from './durable.mjs';
 import { verifyAndLoadChainLog }              from './chain-log.mjs';
+import { createChainStore }                   from './chain-store.mjs';
 import { loadMasterKey }                      from './master-key.mjs';
 import { acquireWriterLock }                  from './writer-lock.mjs';
 
@@ -337,10 +338,9 @@ function loadKeystore() {
     // clean log we restore the real post-advance state (not just the seed),
     // so future advances continue the same hash chain uninterrupted across
     // restarts.
-    const logPath = join(CHAIN_DIR, keyId + '.log');
     const seed    = Buffer.from(encryptKey.slice(0, 32));
     const { counter: ctr, state: restoredState, records } =
-          verifyAndLoadChainLog(logPath, seed);
+          chainStore.load(keyId, seed);
     if (records > 0) {
       console.log(`✔ Chain for ${keyId}: verified ${records} records, counter=${ctr}`);
     }
@@ -371,27 +371,22 @@ function saveKeystore() {
   try { chmodSync(KS_FILE, 0o600); } catch {}
 }
 
-// Fsync the chain append by default. A token that returned 200 must survive
-// a power loss with its counter recorded; otherwise the counter replays after
-// restart and the in-flight token collides with the next issue. Opt out with
-// QV_CHAIN_FSYNC=0 (e.g. CI, tests, low-value environments).
+// Pluggable chain store. Today this is the file backend (zero behaviour
+// change from v4.3); when QV_CHAIN_STORE=postgres / s3 / etcd lands in
+// v4.4 the dispatcher in chain-store.mjs picks the right backend. The
+// in-place rewrite of every chain-log call site to chainStore.append /
+// chainStore.load means future backend swaps require no changes here.
+//
+// fsync-by-default; opt out with QV_CHAIN_FSYNC=0 (test envs only).
 const CHAIN_FSYNC = process.env.QV_CHAIN_FSYNC !== '0';
+const chainStore  = createChainStore({ chainDir: CHAIN_DIR, fsync: CHAIN_FSYNC });
+
 function appendChain(keyId, counter, stateHash) {
   // Cross-host fence verification. If we share DATA_DIR with another node
   // that stole our writer lease (NFS / SMB / EFS), this throws
   // WRITER_LOCK_LOST before we corrupt the chain log.
   if (WRITER_LOCK) WRITER_LOCK.checkFence();
-
-  const rec = Buffer.alloc(40);
-  rec.writeBigUInt64BE(BigInt(counter), 0);
-  Buffer.from(stateHash).copy(rec, 8);
-  const path = join(CHAIN_DIR, keyId + '.log');
-  if (CHAIN_FSYNC) {
-    const fd = openSync(path, 'a', 0o600);
-    try { writeSync(fd, rec); fsyncSync(fd); } finally { closeSync(fd); }
-  } else {
-    appendFileSync(path, rec);
-  }
+  chainStore.append(keyId, counter, stateHash);
 }
 
 // ─── Minimal HTTP framework ─────────────────────────────────────────────────
@@ -606,6 +601,52 @@ route('POST', '/v3/token/verify', verifyRL(async (req, res) => {
     res.writeHead(401, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ valid: false, error: { code: e.message } }));
   }
+}));
+
+// ─── POST /v3/token/verify-auto ─────────────────────────────────────────────
+// Same response shape as /v3/token/verify but the caller does NOT supply
+// keyId — the server trial-verifies against each non-revoked key in the
+// keystore until one succeeds. O(N) over active keys; N is typically ≤10.
+//
+// Operationally closes limitation #2 (no kid in the wire format) without
+// breaking the wire. The wire-format kid is still on the v5.0 roadmap;
+// this endpoint is the bridge until then.
+route('POST', '/v3/token/verify-auto', verifyRL(async (req, res) => {
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  const { token } = body;
+  if (!token) return err(res, 400, 'MISSING_TOKEN', 'token required');
+
+  let tokenBytes;
+  try { tokenBytes = /^[0-9a-f]+$/i.test(token) ? hex2u8(token) : b64ud(token); }
+  catch { return err(res, 400, 'INVALID_TOKEN', 'hex or base64url'); }
+
+  let lastError = 'NO_KEY_MATCHED';
+  for (const [keyId, entry] of keystore.entries()) {
+    if (revoked.has(keyId)) continue;
+    const vchain = MutationChain.fromState(entry.encryptKey.slice(0, 32), 0n);
+    try {
+      const out = verifyToken({
+        token: tokenBytes, verifyingKey: entry.verifyingKey,
+        encryptKey: entry.encryptKey, chain: vchain,
+      });
+      mTokVerify.inc({ result: 'ok' });
+      return json(res, 200, {
+        valid: true,
+        keyId,
+        claims: out.claims,
+        issuedAt: new Date(Number(out.issuedAt / 1000n)).toISOString(),
+        ttlSecs: out.ttl,
+        mutationCtr: Number(out.mutationCtr),
+      });
+    } catch (e) {
+      lastError = e.message;
+      // continue to next key
+    }
+  }
+  mTokVerify.inc({ result: 'invalid' });
+  res.writeHead(401, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ valid: false, error: { code: 'NO_KEY_MATCHED', detail: lastError } }));
 }));
 
 // ─── POST /v3/token/batch-verify ────────────────────────────────────────────
