@@ -144,6 +144,42 @@ paths:
           description: already revoked
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
+  /v3/keys/{keyId}/quota:
+    parameters:
+      - in: path
+        name: keyId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [keys]
+      summary: Per-key rate-limit observability
+      description: |
+        Read-only snapshot of the per-keyId rate-limit bucket. Exposes
+        the configured ceiling, override (if any), and current refilled
+        token count. Does NOT consume a token. Returns 404 if the keyId
+        is unknown. Safe to expose without bearer — leaks nothing
+        beyond the caller-supplied keyId.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [keyId, revoked, issue]
+                properties:
+                  keyId:   { type: string }
+                  revoked: { type: boolean }
+                  issue:
+                    type: object
+                    properties:
+                      configured:   { type: boolean }
+                      effectiveRpm: { type: integer }
+                      defaultRpm:   { type: integer }
+                      overrideRpm:  { type: integer, nullable: true }
+                      tokens:       { type: integer }
+                      capacity:     { type: integer }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v3/keys/{keyId}/vk.bin:
     parameters:
       - in: path

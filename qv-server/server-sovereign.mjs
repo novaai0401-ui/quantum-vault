@@ -484,11 +484,38 @@ route('GET', '/v3/ready', publicRL((_req, res) => {
   json(res, p.ok ? 200 : 503, p);
 }));
 
-// Back-compat alias. Kept identical to /v3/ready to avoid surprising v4.2
-// clients that polled /v3/health as a readiness signal.
+// Operational health surface. Always 200 once the process is up — this is
+// for dashboards, not k8s probes (use /v3/ready for those). Includes:
+//   - readiness flags (boot, draining)
+//   - key + revoked counts
+//   - chain-store backend identity (file vs postgres vs …)
+//   - writer-lock fence number (correctness anchor for L1)
+//   - verify-pool queue depth (saturation indicator)
+//   - process uptime seconds + node version
+// No secrets. Safe to expose without bearer.
 route('GET', '/v3/health', publicRL((_req, res) => {
-  const p = readyPayload();
-  json(res, p.ok ? 200 : 503, p);
+  const draining = !!(shutdownCtl && shutdownCtl.isDraining());
+  const queue = (typeof verifyPool !== 'undefined' && verifyPool && verifyPool.queueDepth)
+    ? verifyPool.queueDepth() : 0;
+  json(res, 200, {
+    ok:         bootReady && !draining,
+    status:     bootReady ? (draining ? 'draining' : 'ready') : 'starting',
+    version:    '4.0.0-alpha',
+    algorithm:  'ML-DSA-87 (NIST FIPS 204)',
+    sovereign:  true,
+    dependencies: 'zero-npm',
+    keysLoaded: keystore.size,
+    keysRevoked: revoked.size,
+    inFlight:   shutdownCtl ? shutdownCtl.inFlight : 0,
+    draining,
+    chainStore: chainStore?.kind || 'unknown',
+    writerLock: WRITER_LOCK
+      ? { held: true, fence: WRITER_LOCK.fence?.toString() }
+      : { held: false },
+    verifyQueue: { depth: queue, max: METRICS_CFG?.queueMax ?? null },
+    uptimeSeconds: Math.round(process.uptime()),
+    node:       process.version,
+  });
 }));
 
 route('GET', '/v3/spec', publicRL((_req, res) => {
@@ -847,6 +874,23 @@ route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, publicRL((_req, res, m) => {
     'cache-control':  'public, max-age=3600',
   });
   res.end(Buffer.from(v.verifyingKey));
+}));
+
+// Per-key rate-limit observability. Returns the bucket state for the
+// keyId without consuming a token. Useful for dashboards and ops
+// runbooks that need to know whether a tenant is approaching their
+// ceiling. No bearer required — this surface reveals only the keyId
+// (which the caller already supplied), the configured ceiling, and
+// the current refilled token count. Leaks no signing material.
+route('GET', /^\/v3\/keys\/([^/]+)\/quota$/, publicRL((_req, res, m) => {
+  const keyId = decodeURIComponent(m[1]);
+  if (!keystore.has(keyId)) return err(res, 404, 'KEY_NOT_FOUND', keyId);
+  const snap = limiter.quotaSnapshot(keyId, 'issue');
+  json(res, 200, {
+    keyId,
+    revoked: revoked.has(keyId),
+    issue: snap,
+  });
 }));
 
 route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((req, res, m) => {

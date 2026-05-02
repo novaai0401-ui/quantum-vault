@@ -301,7 +301,51 @@ export function createLimiter(config, { now = () => Date.now() } = {}) {
   function size() { return ips.size; }
   function keySize() { return keys.size; }
 
-  return { check, checkKey, recordAuthFail, sweep, size, keySize };
+  /**
+   * Read-only snapshot of a key's bucket. Returns null when the key has
+   * no per-key throttle configured. Used by the `/v3/keys/{id}/quota`
+   * endpoint and by ops dashboards. Computes the current refilled
+   * tokens without consuming any.
+   */
+  function quotaSnapshot(keyId, op = 'issue') {
+    if (config.disabled) {
+      return { configured: false, reason: 'rate-limiter globally disabled' };
+    }
+    const baseRpm = (op === 'issue') ? config.perKey.issueRpm : 0;
+    const overrideRpm = config.perKeyOverrides[keyId];
+    const rpm = overrideRpm ?? baseRpm;
+    const result = {
+      keyId,
+      op,
+      defaultRpm: baseRpm,
+      overrideRpm: overrideRpm ?? null,
+      effectiveRpm: rpm,
+      configured: rpm > 0,
+    };
+    if (!result.configured) {
+      result.reason = 'no per-key throttle for this key (default 0 and no override)';
+      return result;
+    }
+    const t = now();
+    const e = keys.get(keyId);
+    if (!e) {
+      // Bucket not yet materialised — fully fresh.
+      result.tokens = rpm;
+      result.capacity = rpm;
+      result.firstSeen = false;
+      return result;
+    }
+    // Compute would-be tokens after refill, without mutating.
+    const elapsedMs = t - e.bucket.lastRefill;
+    const refilled  = Math.min(e.bucket.capacity, e.bucket.tokens + (elapsedMs / 60_000) * rpm);
+    result.tokens = Math.floor(refilled);
+    result.capacity = e.bucket.capacity;
+    result.firstSeen = true;
+    result.lastSeenAgoMs = t - e.lastSeen;
+    return result;
+  }
+
+  return { check, checkKey, recordAuthFail, sweep, size, keySize, quotaSnapshot };
 }
 
 // ─── Middleware glue ────────────────────────────────────────────────────────

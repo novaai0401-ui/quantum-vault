@@ -13,6 +13,44 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **`qv-audit` forensic CLI** (`qv-server/qv-audit.mjs`). Operator tool
+  that streams the JSONL audit log and filters by event, time range,
+  request-id, trace-id, key-id, status family, IP, denial reason, or
+  free-text grep. Three output formats (`human`, `json`, `tsv`) and a
+  `--summary` mode that prints counts + p50/p95/p99 latency over the
+  matching window. `--top events 10` for top-N field histograms.
+  Reads stdin or `--file PATH` so it composes with shell pipelines.
+  Replaces the typical `tail -f audit.log | jq | grep` recipe with a
+  single typo-resistant tool. 14 unit tests.
+- **`qv-cli` Falcon subcommands** (Rust). `qv falcon-keygen --n 512|1024`,
+  `qv falcon-sign`, `qv falcon-verify`. Built with the new `falcon`
+  feature flag (default on). Bridges qv-core's PQClean-backed Falcon
+  to the CLI for ad-hoc signing. Sets up the v4.4 path for
+  `/v3/token/issue?suite=falcon{512,1024}` (Falcon HTTP exposure).
+  Default qv-cli builds now require `cargo build --features falcon`
+  (or just `cargo build`); operators on platforms without a C
+  toolchain can opt out with `--no-default-features`. End-to-end
+  keygen/sign/verify roundtrip verified manually.
+- **`/v3/health` enriched** with operationally-useful state: chain-store
+  backend identity, writer-lock fence number, verify-pool queue
+  depth, uptime seconds, Node version, key + revoked counts. Always
+  returns 200 once the process is up — `/v3/ready` is the k8s-probe
+  endpoint that 503s on startup. No secrets, safe to expose without
+  bearer.
+- **`GET /v3/keys/{keyId}/quota`** — read-only snapshot of a key's
+  per-keyId rate-limit bucket (configured ceiling, override, current
+  refilled token count). Doesn't consume a token; safe to expose
+  without bearer (leaks no signing material). Powers ops dashboards
+  and "is this tenant about to be throttled" runbook queries. 1
+  integration test.
+- **Verify-pool worker affinity design doc**
+  (`docs/design/verify-pool-worker-affinity.md`). Scopes the v4.4
+  optimisation that hashes keyId → worker so verifying-keys stay warm
+  across batches. Documents the three correctness traps (queue
+  starvation, worker death, backpressure semantics) and the migration
+  plan (off by default, behind `QV_VERIFY_AFFINITY`, then default-on
+  after a release of bake time). Implementation deferred to a
+  separate PR.
 - **OpenAPI ↔ server sync gate** (`qv-ops/scripts/openapi-sync.mjs`).
   Bidirectional invariant in CI: every `route(...)` in
   `server-sovereign.mjs` must appear under `paths:` in `qv-spec/openapi.yaml`
