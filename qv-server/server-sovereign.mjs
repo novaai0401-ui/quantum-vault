@@ -269,13 +269,19 @@ function openKey(keyId, sealedB64) {
 // booting the server. See that file for the bounded-queue semantics.
 const POOL_SIZE = Math.max(0, Number(process.env.QV_WORKERS ?? Math.max(2, cpus().length - 1)));
 const QUEUE_MAX = Math.max(1, Number(process.env.QV_VERIFY_QUEUE_MAX ?? 1024));
+// Affinity = keyId-hashed worker dispatch. Off by default in v4.3 — operators
+// flip this when they have hot keys whose verifying-key warm-cache benefits
+// outweigh the per-worker queue starvation risk. See
+// docs/design/verify-pool-worker-affinity.md.
+const POOL_AFFINITY = process.env.QV_VERIFY_AFFINITY === 'true';
 
 let verifyPool = null;
 if (POOL_SIZE > 0) {
-  verifyPool = new VerifyPool(POOL_SIZE, QUEUE_MAX);
+  verifyPool = new VerifyPool(POOL_SIZE, QUEUE_MAX, undefined, { affinity: POOL_AFFINITY });
   try {
     await verifyPool.init();
-    console.log(`✔ Verify pool ready: ${POOL_SIZE} worker${POOL_SIZE>1?'s':''}`);
+    console.log(`✔ Verify pool ready: ${POOL_SIZE} worker${POOL_SIZE>1?'s':''}`
+      + (POOL_AFFINITY ? ` (affinity ON, per-queue=${verifyPool.perQueueMax})` : ''));
   } catch (e) {
     console.error(`✘ Worker pool init failed, falling back to in-thread: ${e.message}`);
     verifyPool = null;
@@ -774,6 +780,9 @@ route('POST', '/v3/token/batch-verify', verifyRL(async (req, res) => {
       if (verifyPool) {
         const chainSeed = entry.encryptKey.slice(0, 32);
         const r = await verifyPool.run({
+          // keyId is read by the affinity dispatcher (see verify-pool.mjs).
+          // Round-robin mode ignores it.
+          keyId,
           // Transfer as plain buffers — structured clone handles zero-copy.
           tokenBytes:   tokenBytes.buffer.slice(tokenBytes.byteOffset, tokenBytes.byteOffset + tokenBytes.byteLength),
           verifyingKey: entry.verifyingKey.buffer.slice(entry.verifyingKey.byteOffset, entry.verifyingKey.byteOffset + entry.verifyingKey.byteLength),

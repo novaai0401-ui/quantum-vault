@@ -13,6 +13,20 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Verify-pool worker affinity** (`QV_VERIFY_AFFINITY=true`, default off).
+  When enabled, jobs are dispatched by `murmur3_32(keyId) % nWorkers`
+  to a fixed worker per key, so a hot key's verifying-key stays warm
+  in that one worker's heap. Eliminates ~30% of per-verify ML-DSA-87
+  setup cost on a sustained workload. Per-worker FIFO queue cap
+  (`ceil(queueMax / nWorkers)`) so a single noisy keyId can't drain
+  capacity from sibling keys; `POOL_OVERLOADED` now includes the
+  `worker` index in the response. Worker-death surfaces stranded jobs
+  as `WORKER_ERROR` (full respawn-and-redispatch is the v4.4
+  refinement scoped in `docs/design/verify-pool-worker-affinity.md`).
+  New `pool.perWorkerQueueDepth()` for ops dashboards. Round-robin
+  path unchanged for deployments that don't enable affinity. 7 unit
+  tests covering hash determinism, distribution across workers,
+  per-worker queue isolation, and round-robin compatibility.
 - **Falcon HTTP bridge — partial L9 closure.** A new `qv-server/falcon-bridge.mjs`
   spawns the `qv-cli` binary as a child process per call, delegating
   Falcon-512 / Falcon-1024 sign + verify to qv-core's PQClean
