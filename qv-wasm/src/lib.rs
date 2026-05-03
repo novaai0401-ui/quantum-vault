@@ -1,4 +1,4 @@
-//! QuantumVault — WebAssembly exports.
+//! Sigvault — WebAssembly exports.
 //! Stdlib-only (no wasm-bindgen) to preserve sovereignty.
 //!
 //! v4.1: unblocks `wasm32-unknown-unknown` by registering a custom

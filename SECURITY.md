@@ -1,6 +1,6 @@
 # Security Policy
 
-QuantumVault is cryptographic infrastructure. A security bug here can
+Sigvault is cryptographic infrastructure. A security bug here can
 compromise every token ever issued. We take reports seriously and we
 won't waste your time.
 
@@ -54,10 +54,10 @@ mitigations while long-term work continues.
 ### In scope
 - `qv-core` (Rust library on crates.io)
 - `qv-ffi` / `libqv` (C ABI + prebuilt binaries)
-- `qv-wasm` / `@quantumvault/wasm`
-- `qv-sdk` / `@quantumvault/sdk`
+- `qv-wasm` / `@sigvault/wasm`
+- `qv-sdk` / `@sigvault/sdk`
 - `qv-server` / `ghcr.io/007krcs/qv-server`
-- `quantumvault` (PyPI REST client)
+- `sigvault` (PyPI REST client)
 - `qv-docs` (if a doc issue materially misleads users about security posture)
 - The GitHub Actions release pipeline and published artifact signatures
 
@@ -65,9 +65,9 @@ mitigations while long-term work continues.
 - Denial-of-service from bounded-resource requests (send 10 GB JSON →
   server slows down). These are operational tuning, not vulnerabilities.
 - Issues in the consumer's application code that happen to use
-  QuantumVault — we'll help diagnose but it's not our CVE.
+  Sigvault — we'll help diagnose but it's not our CVE.
 - Vulnerabilities in third-party dependencies that do not affect
-  QuantumVault's attack surface (file an upstream report and let us
+  Sigvault's attack surface (file an upstream report and let us
   know).
 - Social-engineering / physical attacks.
 - Missing best-practice HTTP headers on qv-docs.

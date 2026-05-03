@@ -10,6 +10,12 @@ dist
 .parcel-cache
 *.log
 
+# ── qv-server zero-dep enforcement ──────────────────────────────────────────
+# qv-server has no runtime deps. CI rejects any commit that ships these.
+# (qv-sdk DOES have deps; this rule is scoped to qv-server only.)
+qv-server/package-lock.json
+qv-server/node_modules/
+
 # ── Server runtime state (never commit keys!) ───────────────────────────────
 qv-server/qv-data
 qv-server/qv-data-test
@@ -58,3 +64,4 @@ venv
 !vendor/**/*.pyc
 !vendor/**/__pycache__/
 !vendor/**/__pycache__/**
+.claude/

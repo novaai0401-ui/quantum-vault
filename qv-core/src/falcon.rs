@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn falcon512_roundtrip() {
         let (sk, vk) = falcon512::generate_keypair().expect("keygen");
-        let msg = b"QuantumVault v4.1 Falcon-512 roundtrip";
+        let msg = b"Sigvault v4.1 Falcon-512 roundtrip";
         let sig = falcon512::sign(&sk, msg).expect("sign");
         assert!(sig.len() <= falcon512::MAX_SIG_BYTES, "sig {} > max", sig.len());
         assert!(sig.len() > 500, "sig suspiciously small: {}", sig.len());
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn falcon1024_roundtrip() {
         let (sk, vk) = falcon1024::generate_keypair().expect("keygen");
-        let msg = b"QuantumVault v4.1 Falcon-1024 roundtrip";
+        let msg = b"Sigvault v4.1 Falcon-1024 roundtrip";
         let sig = falcon1024::sign(&sk, msg).expect("sign");
         assert!(sig.len() <= falcon1024::MAX_SIG_BYTES, "sig {} > max", sig.len());
         assert!(sig.len() > 1000, "sig suspiciously small: {}", sig.len());

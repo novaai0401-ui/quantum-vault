@@ -13,7 +13,7 @@ pub struct VerifyOutput {
     pub mutation_ctr: u64,
 }
 
-/// 7-layer QuantumVault verification pipeline.
+/// 7-layer Sigvault verification pipeline.
 ///
 /// Layer 1 — MAGIC / VERSION / SUITE structural check (done in QVRawToken::from_bytes)
 /// Layer 2 — KOLMOGOROV entropy certification on nonce

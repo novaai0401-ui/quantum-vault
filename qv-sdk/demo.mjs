@@ -1,5 +1,5 @@
 /**
- * QuantumVault v3.0 — Live Demo
+ * Sigvault v3.0 — Live Demo
  * Runs entirely in Node.js — no OS execution restrictions, no code signing needed.
  */
 
@@ -19,7 +19,7 @@ const fail = (msg) => console.log(`${RED}  ✘ ${msg}${RESET}`);
 const info = (msg) => console.log(`${CYAN}  → ${msg}${RESET}`);
 
 console.log(`\n${BOLD}══════════════════════════════════════════════════${RESET}`);
-console.log(`${BOLD}   QuantumVault v3.0 — Post-Quantum Token Demo     ${RESET}`);
+console.log(`${BOLD}   Sigvault v3.0 — Post-Quantum Token Demo     ${RESET}`);
 console.log(`${BOLD}══════════════════════════════════════════════════${RESET}\n`);
 
 // ─── 1. Key generation ───────────────────────────────────────────────────────
@@ -137,6 +137,6 @@ pass(`Verify avg: ${(totalVerify/N).toFixed(1)}ms`);
 
 // ─── Summary ─────────────────────────────────────────────────────────────────
 console.log(`\n${BOLD}══════════════════════════════════════════════════${RESET}`);
-console.log(`${GREEN}${BOLD}  QuantumVault v3.0 — ALL TESTS PASSED  ${RESET}`);
+console.log(`${GREEN}${BOLD}  Sigvault v3.0 — ALL TESTS PASSED  ${RESET}`);
 console.log(`${BOLD}  Runs in Node.js — zero OS restrictions  ${RESET}`);
 console.log(`${BOLD}══════════════════════════════════════════════════${RESET}\n`);

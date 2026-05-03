@@ -5,7 +5,7 @@ export default function Concepts() {
     <>
       <h1>Concepts &amp; Glossary</h1>
       <p className="lead">
-        QuantumVault borrows vocabulary from JWT, PASETO, NIST, and the
+        Sigvault borrows vocabulary from JWT, PASETO, NIST, and the
         PQClean project. This page is the one place where every term is
         defined, every three-letter acronym is spelled out, and every
         "what's the difference between X and Y?" question is answered.
@@ -50,7 +50,7 @@ export default function Concepts() {
       </table>
 
       <p>
-        QuantumVault implements <strong>ML-DSA-87</strong> (highest
+        Sigvault implements <strong>ML-DSA-87</strong> (highest
         security level of Dilithium) as its default, and adds{' '}
         <strong>Falcon-512 / Falcon-1024</strong> as opt-in suites for
         when signature size matters.
@@ -125,7 +125,7 @@ export default function Concepts() {
         would honor.
       </p>
       <p>
-        QuantumVault's wire format is deliberately <em>not</em> JWT.
+        Sigvault's wire format is deliberately <em>not</em> JWT.
         We take the useful parts (typed claims, expiry, opaque
         key-id), drop the footguns (algorithm confusion,{' '}
         <code>alg: none</code>, base64url header parsing), and add
@@ -134,7 +134,7 @@ export default function Concepts() {
 
       <table>
         <thead>
-          <tr><th>Feature</th><th>JWT</th><th>QuantumVault</th></tr>
+          <tr><th>Feature</th><th>JWT</th><th>Sigvault</th></tr>
         </thead>
         <tbody>
           <tr><td>Post-quantum signature</td><td>❌</td><td>✅ ML-DSA-87 / Falcon</td></tr>
@@ -148,14 +148,14 @@ export default function Concepts() {
 
       <p>
         PASETO (v4) is closer in spirit but still ships Ed25519 as its
-        only asymmetric option. QuantumVault is what you want if
+        only asymmetric option. Sigvault is what you want if
         "quantum-safe" is a hard requirement.
       </p>
 
       {/* ============================================================ */}
       <h2 id="token-anatomy">4. Token anatomy — every byte, explained</h2>
 
-      <p>A QuantumVault raw token on the wire looks like this:</p>
+      <p>A Sigvault raw token on the wire looks like this:</p>
 
       <pre><code>{`┌────────────────────── HEADER (fixed 107 B) ──────────────────────┐
 │ suite:1  type:1  issued_at:8  ttl:4                              │
@@ -361,7 +361,7 @@ counter' = counter + 1`}</code></pre>
       <h2 id="keys">8. Three keys, three jobs</h2>
 
       <p>
-        Every QuantumVault identity has <em>three</em> keys, not one.
+        Every Sigvault identity has <em>three</em> keys, not one.
         Mixing them up is the #1 cause of "why doesn't this verify?"
         bug reports.
       </p>
@@ -414,7 +414,7 @@ counter' = counter + 1`}</code></pre>
       {/* ============================================================ */}
       <h2 id="claims">9. Claims — what goes inside</h2>
       <p>
-        A QuantumVault claims bag is a <strong>CBOR map of string → value</strong>.
+        A Sigvault claims bag is a <strong>CBOR map of string → value</strong>.
         There are no reserved claim names (unlike JWT's{' '}
         <code>iss</code>, <code>sub</code>, <code>aud</code>…), but by
         convention we use the JWT names because tooling is universal.
@@ -434,7 +434,7 @@ counter' = counter + 1`}</code></pre>
       {/* ============================================================ */}
       <h2 id="entropy-cert">10. Entropy certification</h2>
       <p>
-        Before a nonce is used, QuantumVault runs{' '}
+        Before a nonce is used, Sigvault runs{' '}
         <code>certify_entropy(nonce)</code> — a sanity check that the
         32 bytes aren't all-zero, aren't a repeated pattern, and pass
         a shannon-entropy threshold. This catches catastrophic RNG
@@ -464,19 +464,19 @@ counter' = counter + 1`}</code></pre>
             <td>No</td>
           </tr>
           <tr>
-            <td><code>@quantumvault/sdk</code></td>
+            <td><code>@sigvault/sdk</code></td>
             <td>npm</td>
             <td>Node / Deno / Bun / Workers — pure JS, no WASM</td>
             <td>No</td>
           </tr>
           <tr>
-            <td><code>@quantumvault/wasm</code></td>
+            <td><code>@sigvault/wasm</code></td>
             <td>npm</td>
             <td>Browsers + edge runtimes where bundle size matters (≈48 KB gzipped)</td>
             <td>No</td>
           </tr>
           <tr>
-            <td><code>quantumvault</code> (PyPI)</td>
+            <td><code>sigvault</code> (PyPI)</td>
             <td>PyPI</td>
             <td>Python — stdlib REST client</td>
             <td><strong>Yes</strong> — talks to qv-server</td>
@@ -498,12 +498,12 @@ counter' = counter + 1`}</code></pre>
 
       <TkxAlert variant="info" title="Decision heuristic.">
         <strong>Same process as your app?</strong> Use qv-core /
-        @quantumvault/sdk / libqv — fastest, no network.
+        @sigvault/sdk / libqv — fastest, no network.
         <br/>
         <strong>Polyglot shop, Python/PHP/Ruby included?</strong> Run
         qv-server and have every language hit the REST API.
         <br/>
-        <strong>Browser / edge?</strong> @quantumvault/wasm.
+        <strong>Browser / edge?</strong> @sigvault/wasm.
       </TkxAlert>
 
       {/* ============================================================ */}
@@ -527,22 +527,22 @@ counter' = counter + 1`}</code></pre>
       <h2 id="vocab">13. Vocabulary quick-reference</h2>
       <dl>
         <dt>AEAD</dt><dd>Authenticated Encryption with Associated Data. A cipher that both encrypts and carries a MAC. We use XChaCha20-Poly1305.</dd>
-        <dt>BLS / RSA / ECDSA</dt><dd>Classical signature algorithms — <em>not</em> quantum-safe. QuantumVault does not implement them.</dd>
+        <dt>BLS / RSA / ECDSA</dt><dd>Classical signature algorithms — <em>not</em> quantum-safe. Sigvault does not implement them.</dd>
         <dt>CBOR</dt><dd>Concise Binary Object Representation (RFC 8949). A schema-less binary format — like JSON, but smaller and faster to parse. Used for claims.</dd>
         <dt>CSPRNG</dt><dd>Cryptographically Secure PRNG. OS-provided on native platforms; on WASM we require a host import.</dd>
         <dt>Dilithium</dt><dd>Former name of ML-DSA. "Dilithium5" still appears in our API for historical continuity.</dd>
         <dt>Falcon</dt><dd>Fast-Fourier Lattice-based Compact signature scheme. Becoming FN-DSA under FIPS 206.</dd>
         <dt>FIPS 204 / 205 / 206</dt><dd>NIST publications standardizing ML-DSA, SLH-DSA, and FN-DSA respectively.</dd>
-        <dt>JOSE / JWT / JWS / JWE</dt><dd>Classical token / crypto suite from IETF. QuantumVault is deliberately not JOSE-compatible — see §3.</dd>
-        <dt>JWKS</dt><dd>JSON Web Key Set — a discovery endpoint listing public keys. QuantumVault's equivalent is <code>GET /v3/keys</code>.</dd>
-        <dt>KEM</dt><dd>Key Encapsulation Mechanism. ML-KEM (Kyber) is the KEM counterpart to ML-DSA. QuantumVault pulls it in transitively for future hybrid modes; not exposed in the v4.2 public API.</dd>
+        <dt>JOSE / JWT / JWS / JWE</dt><dd>Classical token / crypto suite from IETF. Sigvault is deliberately not JOSE-compatible — see §3.</dd>
+        <dt>JWKS</dt><dd>JSON Web Key Set — a discovery endpoint listing public keys. Sigvault's equivalent is <code>GET /v3/keys</code>.</dd>
+        <dt>KEM</dt><dd>Key Encapsulation Mechanism. ML-KEM (Kyber) is the KEM counterpart to ML-DSA. Sigvault pulls it in transitively for future hybrid modes; not exposed in the v4.2 public API.</dd>
         <dt>ML-DSA-87</dt><dd>The category-5 parameter set of ML-DSA. The "87" is historical — it's not a bit-size, it's a variant label.</dd>
         <dt>NIST category 1 / 3 / 5</dt><dd>Rough security-equivalence buckets: 1 ≈ AES-128, 3 ≈ AES-192, 5 ≈ AES-256.</dd>
         <dt>PQC</dt><dd>Post-Quantum Cryptography.</dd>
         <dt>PQClean</dt><dd>Community-maintained reference implementation corpus — we vendor the Falcon code from it.</dd>
         <dt>Shor's algorithm</dt><dd>Quantum algorithm that factors integers and solves discrete log in polynomial time — the reason RSA/ECDSA/Ed25519 need replacing.</dd>
         <dt>SHA3-256</dt><dd>Keccak-based hash, FIPS 202. Used for entropy certification and device fingerprinting.</dd>
-        <dt>Suite</dt><dd>QuantumVault's 1-byte algorithm tag. See §5.</dd>
+        <dt>Suite</dt><dd>Sigvault's 1-byte algorithm tag. See §5.</dd>
         <dt>XChaCha20-Poly1305</dt><dd>Extended-nonce (24 B) ChaCha20 stream cipher with Poly1305 MAC. AEAD construction used to encrypt claims.</dd>
       </dl>
     </>

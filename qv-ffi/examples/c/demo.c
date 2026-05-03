@@ -1,5 +1,5 @@
 /*
- * QuantumVault v4.0 - C FFI Demo
+ * Sigvault v4.0 - C FFI Demo
  * ================================
  * Pure C. No runtime. No HTTP. Links qv.dll directly via qv.h.
  *
@@ -21,14 +21,14 @@ static double ms_since(struct timespec *t0) {
 
 int main(void) {
     printf("\n================================================\n");
-    printf("  QuantumVault v4.0 -- C FFI Demo\n");
+    printf("  Sigvault v4.0 -- C FFI Demo\n");
     printf("  qv.h + qv.dll | NO HTTP | pure C\n");
     printf("================================================\n\n");
     printf("ABI version: %u\n", qv_abi_version());
     printf("Sizes      : sk=%u vk=%u sig=%u\n\n", qv_sk_len(), qv_vk_len(), qv_sig_len());
 
     uint8_t sk[32], vk[2592], sig[4627];
-    const char *msg = "QuantumVault sovereign -- C says hi";
+    const char *msg = "Sigvault sovereign -- C says hi";
     uint32_t msg_len = (uint32_t)strlen(msg);
     struct timespec t;
 

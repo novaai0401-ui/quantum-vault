@@ -6,7 +6,7 @@ use qv_core::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "qv", about = "QuantumVault v3.0 — Post-Quantum Token CLI", version = "3.0.0")]
+#[command(name = "qv", about = "Sigvault v3.0 — Post-Quantum Token CLI", version = "3.0.0")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -24,7 +24,7 @@ enum Command {
         ek_out: PathBuf,
     },
 
-    /// Issue a new QuantumVault token.
+    /// Issue a new Sigvault token.
     Issue {
         #[arg(long)]
         sk: PathBuf,
@@ -53,7 +53,7 @@ enum Command {
         out: Option<PathBuf>,
     },
 
-    /// Verify a QuantumVault token.
+    /// Verify a Sigvault token.
     Verify {
         #[arg(long)]
         vk: PathBuf,
@@ -70,6 +70,64 @@ enum Command {
         #[arg(long)]
         token: String,
     },
+
+    /// Generate a Falcon-512 / Falcon-1024 keypair.
+    ///
+    /// Available only when qv-cli is built with the `falcon` feature
+    /// (default). On platforms without a C toolchain (rare for the
+    /// CLI), build with `--no-default-features`.
+    #[cfg(feature = "falcon")]
+    FalconKeygen {
+        /// 512 or 1024 — NIST level 1 vs level 5.
+        #[arg(long, default_value = "512", value_parser = parse_falcon_n)]
+        n: u16,
+        #[arg(long)]
+        sk_out: PathBuf,
+        #[arg(long)]
+        vk_out: PathBuf,
+    },
+
+    /// Sign arbitrary bytes with a Falcon signing key. Output is the
+    /// raw signature, hex-encoded by default.
+    #[cfg(feature = "falcon")]
+    FalconSign {
+        #[arg(long, default_value = "512", value_parser = parse_falcon_n)]
+        n: u16,
+        /// Path to the secret-key file produced by `falcon-keygen`.
+        #[arg(long)]
+        sk: PathBuf,
+        /// Path to the message file. If omitted, reads from stdin.
+        #[arg(long)]
+        msg: Option<PathBuf>,
+        /// hex (default) | base64 | binary
+        #[arg(long, default_value = "hex")]
+        format: String,
+    },
+
+    /// Verify a Falcon signature against a message.
+    #[cfg(feature = "falcon")]
+    FalconVerify {
+        #[arg(long, default_value = "512", value_parser = parse_falcon_n)]
+        n: u16,
+        /// Path to the verifying-key file produced by `falcon-keygen`.
+        #[arg(long)]
+        vk: PathBuf,
+        /// Path to the message file. If omitted, reads from stdin.
+        #[arg(long)]
+        msg: Option<PathBuf>,
+        /// Path to the signature file (raw bytes), or hex/base64 string.
+        #[arg(long)]
+        sig: String,
+    },
+}
+
+#[cfg(feature = "falcon")]
+fn parse_falcon_n(s: &str) -> Result<u16, String> {
+    match s {
+        "512"  => Ok(512),
+        "1024" => Ok(1024),
+        _ => Err(format!("--n must be 512 or 1024 (got {s})")),
+    }
 }
 
 fn main() {
@@ -88,6 +146,180 @@ fn run(cmd: Command) -> anyhow::Result<()> {
         }
         Command::Verify { vk, ek, token } => cmd_verify(vk, ek, token),
         Command::Inspect { token } => cmd_inspect(token),
+        #[cfg(feature = "falcon")]
+        Command::FalconKeygen { n, sk_out, vk_out } => falcon::cmd_keygen(n, sk_out, vk_out),
+        #[cfg(feature = "falcon")]
+        Command::FalconSign   { n, sk, msg, format } => falcon::cmd_sign(n, sk, msg, &format),
+        #[cfg(feature = "falcon")]
+        Command::FalconVerify { n, vk, msg, sig } => falcon::cmd_verify(n, vk, msg, &sig),
+    }
+}
+
+// ─── Falcon subcommand implementations ────────────────────────────────────────
+
+#[cfg(feature = "falcon")]
+mod falcon {
+    use std::path::PathBuf;
+    use std::io::Read;
+    use anyhow::Context;
+    use qv_core::falcon::{falcon512, falcon1024};
+
+    fn read_msg(path: &Option<PathBuf>) -> anyhow::Result<Vec<u8>> {
+        match path {
+            Some(p) => Ok(std::fs::read(p).with_context(|| format!("read {}", p.display()))?),
+            None => {
+                let mut buf = Vec::new();
+                std::io::stdin().read_to_end(&mut buf)?;
+                Ok(buf)
+            }
+        }
+    }
+
+    fn parse_sig(s: &str) -> anyhow::Result<Vec<u8>> {
+        // 1) Path on disk → raw bytes.
+        if std::path::Path::new(s).is_file() {
+            return Ok(std::fs::read(s)?);
+        }
+        // 2) Hex.
+        if s.chars().all(|c| c.is_ascii_hexdigit()) && s.len() % 2 == 0 {
+            return Ok(hex::decode(s)?);
+        }
+        // 3) base64.
+        crate::base64_decode_minimal::decode(s)
+    }
+
+    fn write_secure(path: &PathBuf, bytes: &[u8]) -> anyhow::Result<()> {
+        std::fs::write(path, bytes)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path)?.permissions();
+            perms.set_mode(0o600);
+            std::fs::set_permissions(path, perms)?;
+        }
+        Ok(())
+    }
+
+    pub fn cmd_keygen(n: u16, sk_out: PathBuf, vk_out: PathBuf) -> anyhow::Result<()> {
+        match n {
+            512 => {
+                let (sk, vk) = falcon512::generate_keypair()?;
+                write_secure(&sk_out, &sk.to_bytes())?;
+                std::fs::write(&vk_out, vk.to_bytes())?;
+            }
+            1024 => {
+                let (sk, vk) = falcon1024::generate_keypair()?;
+                write_secure(&sk_out, &sk.to_bytes())?;
+                std::fs::write(&vk_out, vk.to_bytes())?;
+            }
+            _ => unreachable!("clap rejects other values"),
+        }
+        eprintln!("✔ Falcon-{n} keypair → sk={} vk={}", sk_out.display(), vk_out.display());
+        Ok(())
+    }
+
+    pub fn cmd_sign(n: u16, sk_path: PathBuf, msg_path: Option<PathBuf>, format: &str) -> anyhow::Result<()> {
+        let msg = read_msg(&msg_path)?;
+        let sk_bytes = std::fs::read(&sk_path)?;
+        let sig = match n {
+            512 => {
+                let sk = falcon512::QVFalcon512SigningKey::from_bytes(&sk_bytes)?;
+                falcon512::sign(&sk, &msg)?
+            }
+            1024 => {
+                let sk = falcon1024::QVFalcon1024SigningKey::from_bytes(&sk_bytes)?;
+                falcon1024::sign(&sk, &msg)?
+            }
+            _ => unreachable!(),
+        };
+        match format {
+            "hex"    => println!("{}", hex::encode(&sig)),
+            "base64" => println!("{}", crate::base64_encode_minimal::encode(&sig)),
+            "binary" => {
+                use std::io::Write;
+                std::io::stdout().write_all(&sig)?;
+            }
+            _ => anyhow::bail!("--format must be hex|base64|binary, got {format}"),
+        }
+        Ok(())
+    }
+
+    pub fn cmd_verify(n: u16, vk_path: PathBuf, msg_path: Option<PathBuf>, sig_arg: &str) -> anyhow::Result<()> {
+        let msg = read_msg(&msg_path)?;
+        let vk_bytes = std::fs::read(&vk_path)?;
+        let sig = parse_sig(sig_arg)?;
+        let r = match n {
+            512 => {
+                let vk = falcon512::QVFalcon512VerifyingKey::from_bytes(&vk_bytes)?;
+                falcon512::verify(&vk, &msg, &sig)
+            }
+            1024 => {
+                let vk = falcon1024::QVFalcon1024VerifyingKey::from_bytes(&vk_bytes)?;
+                falcon1024::verify(&vk, &msg, &sig)
+            }
+            _ => unreachable!(),
+        };
+        match r {
+            Ok(()) => { println!("VALID"); Ok(()) }
+            Err(e) => {
+                eprintln!("INVALID: {e}");
+                std::process::exit(2);
+            }
+        }
+    }
+}
+
+// ─── Tiny base64 helpers (zero-dep — `base64` would be one more crate) ────────
+//
+// We pull in nothing else: encode/decode standard base64 with padding.
+// Implemented inline to avoid pulling `base64` crate just for the CLI.
+
+#[cfg(feature = "falcon")]
+mod base64_encode_minimal {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    pub fn encode(data: &[u8]) -> String {
+        let mut out = String::with_capacity(((data.len() + 2) / 3) * 4);
+        let chunks = data.chunks(3);
+        for c in chunks {
+            let n = match c.len() {
+                3 => ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | (c[2] as u32),
+                2 => ((c[0] as u32) << 16) | ((c[1] as u32) << 8),
+                1 => (c[0] as u32) << 16,
+                _ => unreachable!(),
+            };
+            out.push(A[((n >> 18) & 0x3F) as usize] as char);
+            out.push(A[((n >> 12) & 0x3F) as usize] as char);
+            if c.len() > 1 { out.push(A[((n >> 6) & 0x3F) as usize] as char); } else { out.push('='); }
+            if c.len() > 2 { out.push(A[(n & 0x3F) as usize]        as char); } else { out.push('='); }
+        }
+        out
+    }
+}
+
+#[cfg(feature = "falcon")]
+mod base64_decode_minimal {
+    pub fn decode(s: &str) -> anyhow::Result<Vec<u8>> {
+        let mut out = Vec::with_capacity((s.len() / 4) * 3);
+        let mut buf = 0u32; let mut bits = 0;
+        for c in s.chars() {
+            let v: u32 = match c {
+                'A'..='Z' => c as u32 - 'A' as u32,
+                'a'..='z' => c as u32 - 'a' as u32 + 26,
+                '0'..='9' => c as u32 - '0' as u32 + 52,
+                '+' | '-' => 62,
+                '/' | '_' => 63,
+                '=' | '\n' | '\r' | ' ' | '\t' => continue,
+                _ => anyhow::bail!("invalid base64 char {c:?}"),
+            };
+            buf = (buf << 6) | v;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                out.push((buf >> bits) as u8);
+                buf &= (1 << bits) - 1;
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -208,7 +440,7 @@ fn cmd_inspect(token_arg: String) -> anyhow::Result<()> {
     let raw = QVRawToken::from_bytes(&bytes)?;
     let h = &raw.header;
 
-    println!("QuantumVault Token Inspection");
+    println!("Sigvault Token Inspection");
     println!("  version      : {:#06x}", qv_core::VERSION);
     println!("  suite        : {} ({:#04x})", h.suite.name(), h.suite.as_byte());
     println!("  token_type   : {:?} ({:#04x})", h.token_type, h.token_type.as_byte());

@@ -1,5 +1,5 @@
 /**
- * QuantumVault v4.1 — batch verify worker
+ * Sigvault v4.1 — batch verify worker
  * =========================================
  * One of N worker threads spawned by server-sovereign.mjs.
  *

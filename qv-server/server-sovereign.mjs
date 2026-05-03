@@ -1,5 +1,5 @@
 /**
- * QuantumVault v4.0 — SOVEREIGN REST API Server
+ * Sigvault v4.0 — SOVEREIGN REST API Server
  * ================================================
  * ZERO npm dependencies. Uses Node.js stdlib only:
  *   - http       (built-in)
@@ -16,25 +16,54 @@
 import { createServer }     from 'node:http';
 import { randomUUID, randomBytes, createCipheriv, createDecipheriv,
          createHash }       from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync,
-         existsSync, unlinkSync, chmodSync }                      from 'node:fs';
+import { mkdirSync, readFileSync, appendFileSync,
+         existsSync, chmodSync,
+         openSync, writeSync, fsyncSync, closeSync }              from 'node:fs';
 import { join, dirname }    from 'node:path';
 import { fileURLToPath }    from 'node:url';
-import { Worker }           from 'node:worker_threads';
 import { cpus }             from 'node:os';
+
+import { VerifyPool }       from './verify-pool.mjs';
+import { writeFileDurable, cleanupStaleTmp } from './durable.mjs';
+import { verifyAndLoadChainLog }              from './chain-log.mjs';
+import { createChainStore }                   from './chain-store.mjs';
+import { loadMasterKey }                      from './master-key.mjs';
+import { acquireWriterLock }                  from './writer-lock.mjs';
 
 import {
   generateKeypair, issueToken, verifyToken, inspectToken,
   MutationChain, SUITE_IDS, TOKEN_TYPES
 } from '../qv-sdk/src/index.mjs';
 
+import { loadAdminConfig, requireAdmin }       from './auth.mjs';
+import {
+  loadRateLimitConfig, createLimiter, rateLimit,
+  readJsonBounded, extractClientIp,
+} from './ratelimit.mjs';
+import {
+  loadSecurityConfig, applySecurityHeaders,
+  loadCorsConfig,     applyCors as applyCorsHeaders,
+} from './security.mjs';
+import {
+  loadAuditConfig, createAuditor,
+  extractOrMintRequestId, applyRequestId,
+} from './audit.mjs';
+import { createShutdown } from './shutdown.mjs';
+import { createMetrics, loadMetricsConfig } from './metrics.mjs';
+import { loadClaimsConfig, validateClaims }  from './claims.mjs';
+import { loadCidrConfig, matchesAny }        from './cidr.mjs';
+import { applyTrace }                        from './trace.mjs';
+import { loadOtlpConfig, createOtlpExporter } from './otlp.mjs';
+import { probeFalconCli, falconSign, falconVerify } from './falcon-bridge.mjs';
+
 // ─── Config ─────────────────────────────────────────────────────────────────
 const PORT     = Number(process.env.PORT || process.env.QV_PORT || 7433);
 const HOST     = process.env.QV_HOST || '0.0.0.0';
-// CORS: permissive by default in local dev, caller-supplied in prod.
-// Set QV_CORS_ORIGIN to a specific origin (or "*") to enable browser access
-// from the docs site. Empty = no CORS headers at all.
-const CORS_ORIGIN = process.env.QV_CORS_ORIGIN || '';
+// Security headers + CORS are now loaded via dedicated modules. See
+// security.mjs. CORS defaults to OFF (no headers) unless QV_CORS_ORIGIN(S) is
+// set — browsers block cross-origin by default, which is what we want.
+const SEC_CFG  = loadSecurityConfig();
+const CORS_CFG = loadCorsConfig();
 const DATA_DIR = process.env.QV_DATA_DIR
   ?? join(dirname(fileURLToPath(import.meta.url)), 'qv-data');
 const CHAIN_DIR = join(DATA_DIR, 'chains');
@@ -44,25 +73,175 @@ const REV_FILE  = join(DATA_DIR, 'revoked.json');
 
 mkdirSync(CHAIN_DIR, { recursive: true });
 
-// ─── Master key (seals all signing keys at rest) ────────────────────────────
-// Generated once on first boot. Chmod 0600. If deleted, all sealed signing
-// keys become unrecoverable (by design — delete to rotate).
-// If you want HSM/DPAPI/keyring integration, override this with an env var
-// QV_MASTER_KEY_HEX (64 hex chars) — never logged, never persisted.
-function loadOrCreateMasterKey() {
-  if (process.env.QV_MASTER_KEY_HEX) {
-    const mk = Buffer.from(process.env.QV_MASTER_KEY_HEX, 'hex');
-    if (mk.length !== 32) throw new Error('QV_MASTER_KEY_HEX must be 32 bytes (64 hex chars)');
-    return mk;
-  }
-  if (existsSync(MK_FILE)) return readFileSync(MK_FILE);
-  const mk = randomBytes(32);
-  writeFileSync(MK_FILE, mk, { mode: 0o600 });
-  try { chmodSync(MK_FILE, 0o600); } catch {}
-  console.log(`✔ Generated new master key at ${MK_FILE} (chmod 0600)`);
-  return mk;
+// ─── Single-writer lock (Phase 3 / limitation #1 partial) ───────────────────
+// Refuse to start if another live qv-server is already writing to this
+// DATA_DIR. Stale or expired leases are stolen automatically. Released on
+// graceful shutdown (see SHUTDOWN.onClose). Cross-host safety NOT guaranteed
+// — see writer-lock.mjs and ROADMAP.md v4.4 for the real coordinator.
+const WRITER_LOCK_DISABLED = process.env.QV_WRITER_LOCK_DISABLED === 'true';
+let WRITER_LOCK = null;
+if (!WRITER_LOCK_DISABLED) {
+  WRITER_LOCK = acquireWriterLock({ dataDir: DATA_DIR });
+  console.log(`✔ Writer lock acquired (fence ${WRITER_LOCK.fence}) at ${WRITER_LOCK.path}`);
 }
-const MASTER_KEY = loadOrCreateMasterKey();
+
+// ─── Admin auth (R-4.3.11) ──────────────────────────────────────────────────
+// Fail-closed: loadAdminConfig throws unless QV_ADMIN_TOKEN,
+// QV_ADMIN_TOKEN_SHA256, or QV_ALLOW_ANON=true is set. No implicit defaults.
+const ADMIN_CFG = loadAdminConfig();
+if (ADMIN_CFG.mode === 'anon') {
+  console.warn('⚠  QV_ALLOW_ANON=true — admin endpoints are UNAUTHENTICATED. Local dev only.');
+} else {
+  console.log(`✔ Admin auth: ${ADMIN_CFG.mode} mode`);
+}
+
+// ─── Rate limiting + body-size caps (R-4.3.9) ───────────────────────────────
+const RATE_CFG   = loadRateLimitConfig();
+const CLAIMS_CFG = loadClaimsConfig();
+const limiter    = createLimiter(RATE_CFG);
+// Sweep idle IPs every 5 minutes to keep memory bounded. unref so we don't
+// block shutdown.
+const _sweepTimer = setInterval(() => limiter.sweep(), 5 * 60 * 1000);
+if (_sweepTimer.unref) _sweepTimer.unref();
+if (RATE_CFG.disabled) {
+  console.warn('⚠  QV_RATE_LIMIT_DISABLED=true — rate limiting is OFF. Use only behind a trusted mesh.');
+} else {
+  console.log(`✔ Rate limits (per-IP rpm): public=${RATE_CFG.rpm.public} verify=${RATE_CFG.rpm.verify} admin=${RATE_CFG.rpm.admin} authFail=${RATE_CFG.rpm.authFail}; body ≤ ${RATE_CFG.maxBodyBytes}B, claims ≤ ${RATE_CFG.maxClaimsBytes}B`);
+  if (RATE_CFG.perKey.issueRpm > 0 || Object.keys(RATE_CFG.perKeyOverrides).length > 0) {
+    const overrides = Object.keys(RATE_CFG.perKeyOverrides).length;
+    console.log(`✔ Per-key rate limit (issue): default=${RATE_CFG.perKey.issueRpm} rpm`
+      + (overrides ? `, ${overrides} override(s)` : ''));
+  }
+}
+
+// ─── Metrics (R-4.3.5) ──────────────────────────────────────────────────────
+const METRICS_CFG = loadMetricsConfig();
+const metrics = createMetrics();
+const mHttpReqs   = metrics.counter('qv_http_requests_total',  { help: 'Total HTTP requests by method/path/status' });
+const mHttpDur    = metrics.histogram('qv_http_request_duration_seconds', { help: 'HTTP request duration in seconds' });
+const mAuthDenies = metrics.counter('qv_auth_denies_total',    { help: 'Admin-bearer auth denials by reason' });
+const mRateDenies = metrics.counter('qv_rate_limit_denies_total', { help: 'Rate-limit denials by category' });
+const mTokIssue   = metrics.counter('qv_token_issue_total',    { help: 'Token issuances by suite/tokenType/result' });
+const mTokVerify  = metrics.counter('qv_token_verify_total',   { help: 'Token verifications by result' });
+const mKeys       = metrics.gauge('qv_keys_total',             { help: 'Keys loaded in the keystore' });
+const mRevoked    = metrics.gauge('qv_revoked_total',          { help: 'Revoked key ids' });
+const mInflight   = metrics.gauge('qv_inflight_requests',      { help: 'In-flight HTTP requests' });
+const mUptime     = metrics.gauge('qv_process_uptime_seconds', { help: 'Process uptime in seconds' });
+const mQueueDepth = metrics.gauge('qv_verify_queue_depth',     { help: 'Verify-pool queued jobs waiting for a worker' });
+const mQueueRejects = metrics.counter('qv_verify_queue_rejects_total', { help: 'Jobs rejected because the verify-pool queue was full' });
+if (METRICS_CFG.enabled) {
+  console.log(`✔ Metrics: /v3/metrics ${METRICS_CFG.public ? '(PUBLIC — behind mesh only)' : '(admin-bearer protected)'}`);
+}
+
+// ─── Audit log (R-4.3.6) ────────────────────────────────────────────────────
+const AUDIT_CFG = loadAuditConfig(process.env, DATA_DIR);
+
+// Optional OTLP export. When QV_OTLP_ENDPOINT is set, every audit event
+// that has a traceId/spanId is converted into an OTLP/JSON span and
+// batched to the configured collector. Best-effort: failures are
+// swallowed so a flaky collector cannot impact request latency.
+const OTLP_CFG = loadOtlpConfig();
+const otlp     = createOtlpExporter(OTLP_CFG);
+if (OTLP_CFG.enabled) {
+  console.log(`✔ OTLP exporter: ${OTLP_CFG.url.href} (batch=${OTLP_CFG.batchMax}, flush=${OTLP_CFG.flushMs}ms)`);
+}
+
+// Falcon bridge availability probe — log once at boot. The bridge is
+// optional: deployments that don't need Falcon don't need qv-cli on PATH.
+const FALCON_PROBE = probeFalconCli();
+if (FALCON_PROBE.available) {
+  console.log(`✔ Falcon bridge: qv-cli at ${FALCON_PROBE.path}`);
+} else {
+  console.log(`⚠  Falcon bridge: not available (${FALCON_PROBE.reason}) — `
+    + `/v3/falcon/* will return 503 FALCON_BRIDGE_UNAVAILABLE`);
+}
+
+const audit = createAuditor({
+  config: AUDIT_CFG,
+  sink:   OTLP_CFG.enabled ? (rec) => otlp.onAuditEvent(rec) : null,
+});
+if (!AUDIT_CFG.disabled) {
+  console.log(`✔ Audit log: file=${AUDIT_CFG.fileOn ? AUDIT_CFG.path : 'off'} stdout=${AUDIT_CFG.stdout}`);
+}
+
+function onAuthEvent(req, verdict) {
+  if (verdict.reason === 'ok' || verdict.reason === 'anon') return;
+  // Count against the auth-fail bucket. If the bucket is drained, future
+  // admin requests from this IP will 429 even with the right token — an
+  // attacker cannot abuse that to lock out a legitimate admin as long as
+  // the admin's IP is different (typical). Operators who must share an IP
+  // can raise QV_RATE_AUTHFAIL_RPM or disable via QV_RATE_LIMIT_DISABLED.
+  const ip  = extractClientIp(req);
+  const af  = limiter.recordAuthFail(ip);
+  audit.event('auth.deny', {
+    level: 'warn',
+    requestId: req.requestId,
+    ip, method: req.method, path: req.url,
+    reason: verdict.reason,
+    authFailRemaining: af.remaining,
+  });
+  mAuthDenies.inc({ reason: verdict.reason });
+}
+// Wrap the rate-limit middleware to count denies in the Prometheus metric.
+// We detect the 429 by snooping the outbound status on res.on('finish').
+function metered(category, handler) {
+  const wrapped = rateLimit(handler, limiter, category);
+  return (req, res, m) => {
+    res.on('finish', () => {
+      if (res.statusCode === 429) mRateDenies.inc({ category });
+    });
+    return wrapped(req, res, m);
+  };
+}
+// CIDR allowlist (limitation #5) — defence-in-depth on top of the bearer.
+const CIDR_CFG = loadCidrConfig();
+if (CIDR_CFG.admin.length > 0) {
+  console.log(`✔ Admin CIDR allowlist: ${CIDR_CFG.admin.length} range(s)`);
+}
+function cidrGate(list, onDeny) {
+  return (handler) => (req, res, m) => {
+    if (list.length === 0) return handler(req, res, m);
+    const ip = extractClientIp(req);
+    if (!matchesAny(ip, list)) {
+      if (onDeny) onDeny(req, ip);
+      return err(res, 403, 'IP_NOT_ALLOWED', 'caller IP is not in the admin allowlist');
+    }
+    return handler(req, res, m);
+  };
+}
+const adminCidr   = cidrGate(CIDR_CFG.admin,   (req, ip) => {
+  audit.event('auth.deny', { requestId: req.requestId, reason: 'cidr_denied', ip });
+  mAuthDenies.inc({ reason: 'cidr_denied' });
+});
+const metricsCidr = cidrGate(CIDR_CFG.metrics, (req, ip) => {
+  audit.event('auth.deny', { requestId: req.requestId, reason: 'cidr_denied', ip });
+  mAuthDenies.inc({ reason: 'cidr_denied' });
+});
+const admin    = (handler) => metered('admin',   adminCidr(requireAdmin(handler, ADMIN_CFG, { onAuth: onAuthEvent })));
+const publicRL = (handler) => metered('public',  handler);
+const verifyRL = (handler) => metered('verify',  handler);
+
+// ─── Master key (seals all signing keys at rest) ────────────────────────────
+// Resolved through master-key.mjs's MasterKeyProvider:
+//
+//   QV_MASTER_KEY_PROVIDER=env|file|exec|auto   (default: auto)
+//   QV_MASTER_KEY_HEX=<64 hex>                  (env backend)
+//   QV_MASTER_KEY_EXEC="<shell command>"        (exec backend; stdout = hex)
+//
+// `auto` (default) prefers env > exec > file. The file backend generates a
+// fresh key on miss and chmod 0600s it. If the file is deleted, all sealed
+// signing keys become unrecoverable — by design (delete to rotate).
+//
+// The exec backend is the universal escape hatch for KMS / Vault / Azure KV /
+// 1Password / sops — write a 5-line wrapper that prints the key on stdout.
+// See docs/story/19-secret-managers.md for recipes.
+const _mk = loadMasterKey({ filePath: MK_FILE, env: process.env });
+if (_mk.generated) {
+  console.log(`✔ Generated new master key at ${_mk.path} (chmod 0600)`);
+} else {
+  console.log(`✔ Master key loaded from ${_mk.source}${_mk.path ? ` (${_mk.path})` : ''}`);
+}
+const MASTER_KEY = _mk.key;
 
 // AES-256-GCM envelope: [12B iv | 16B tag | N B ciphertext].
 // Per-key 96-bit IV is random; AAD binds the wrap to the keyId to stop swap attacks.
@@ -85,68 +264,24 @@ function openKey(keyId, sealedB64) {
   return new Uint8Array(Buffer.concat([dec.update(ct), dec.final()]));
 }
 
-// ─── Verify worker pool (v4.1) ──────────────────────────────────────────────
-// True N-core parallel verify via node:worker_threads. Each worker holds no
-// state — the main thread passes (tokenBytes, vk, ek, chain seed+ctr) per job.
-// Falls back to in-thread Promise.all if QV_WORKERS=0 or pool init fails.
+// ─── Verify worker pool (v4.1 + v4.3 backpressure) ──────────────────────────
+// Implementation lives in verify-pool.mjs so it can be unit-tested without
+// booting the server. See that file for the bounded-queue semantics.
 const POOL_SIZE = Math.max(0, Number(process.env.QV_WORKERS ?? Math.max(2, cpus().length - 1)));
-const WORKER_URL = new URL('./verify-worker.mjs', import.meta.url);
-
-class VerifyPool {
-  constructor(size) {
-    this.size = size;
-    this.workers = [];
-    this.idle = [];         // stack of ready workers
-    this.queue = [];        // pending jobs waiting for a worker
-    this.nextJobId = 1;
-    this.pending = new Map(); // jobId → { resolve, worker }
-  }
-  async init() {
-    for (let i = 0; i < this.size; i++) {
-      const w = new Worker(WORKER_URL);
-      await new Promise((resolve, reject) => {
-        w.once('message', (m) => m.ready ? resolve() : reject(new Error('worker not ready')));
-        w.once('error', reject);
-      });
-      w.on('message', (m) => {
-        if (m.ready) return;
-        const p = this.pending.get(m.jobId);
-        if (!p) return;
-        this.pending.delete(m.jobId);
-        p.resolve(m);
-        this._release(w);
-      });
-      w.on('error', (e) => console.error('✘ verify-worker error:', e.message));
-      this.workers.push(w);
-      this.idle.push(w);
-    }
-  }
-  _release(w) {
-    const next = this.queue.shift();
-    if (next) { this._dispatch(w, next); return; }
-    this.idle.push(w);
-  }
-  _dispatch(w, { msg, resolve }) {
-    const jobId = this.nextJobId++;
-    this.pending.set(jobId, { resolve, worker: w });
-    w.postMessage({ jobId, ...msg });
-  }
-  run(msg) {
-    return new Promise((resolve) => {
-      const w = this.idle.pop();
-      if (w) this._dispatch(w, { msg, resolve });
-      else   this.queue.push({ msg, resolve });
-    });
-  }
-  async shutdown() { await Promise.all(this.workers.map(w => w.terminate())); }
-}
+const QUEUE_MAX = Math.max(1, Number(process.env.QV_VERIFY_QUEUE_MAX ?? 1024));
+// Affinity = keyId-hashed worker dispatch. Off by default in v4.3 — operators
+// flip this when they have hot keys whose verifying-key warm-cache benefits
+// outweigh the per-worker queue starvation risk. See
+// docs/design/verify-pool-worker-affinity.md.
+const POOL_AFFINITY = process.env.QV_VERIFY_AFFINITY === 'true';
 
 let verifyPool = null;
 if (POOL_SIZE > 0) {
-  verifyPool = new VerifyPool(POOL_SIZE);
+  verifyPool = new VerifyPool(POOL_SIZE, QUEUE_MAX, undefined, { affinity: POOL_AFFINITY });
   try {
     await verifyPool.init();
-    console.log(`✔ Verify pool ready: ${POOL_SIZE} worker${POOL_SIZE>1?'s':''}`);
+    console.log(`✔ Verify pool ready: ${POOL_SIZE} worker${POOL_SIZE>1?'s':''}`
+      + (POOL_AFFINITY ? ` (affinity ON, per-queue=${verifyPool.perQueueMax})` : ''));
   } catch (e) {
     console.error(`✘ Worker pool init failed, falling back to in-thread: ${e.message}`);
     verifyPool = null;
@@ -156,11 +291,16 @@ if (POOL_SIZE > 0) {
 // ─── Revocation list ────────────────────────────────────────────────────────
 const revoked = new Set();
 function loadRevoked() {
+  // If a prior crash left `revoked.json.tmp` behind, it's incomplete bytes;
+  // never promote it — just clean up. The last durable revoked.json wins.
+  cleanupStaleTmp(REV_FILE);
   if (!existsSync(REV_FILE)) return;
   for (const id of JSON.parse(readFileSync(REV_FILE, 'utf8'))) revoked.add(id);
 }
 function saveRevoked() {
-  writeFileSync(REV_FILE, JSON.stringify([...revoked], null, 2), { mode: 0o600 });
+  // Durable: fsync data + atomic rename + fsync dir. A revocation that returns
+  // 200 has survived a power-loss.
+  writeFileDurable(REV_FILE, JSON.stringify([...revoked], null, 2), { mode: 0o600 });
 }
 
 // ─── Persistent keystore (plain JSON — signing keys base64-encoded) ─────────
@@ -169,13 +309,27 @@ function saveRevoked() {
 const keystore = new Map();   // keyId → { signingKey:u8, verifyingKey:u8, encryptKey:u8, label, createdAt }
 const chains   = new Map();   // keyId → MutationChain (in RAM, persisted via append-log)
 
+// VK fingerprint → keyId. SHA3-256 of the verifying key, first 16 bytes hex.
+// Operationally closes limitation #2 (no kid in token header) without a
+// wire-format change: a verifier that doesn't know the keyId can compute
+// SHA3-256(VK)[:16].toHex() server-side from each registered VK and look up
+// O(1). Caller code that already passes keyId is unchanged. Caller code that
+// passes ONLY a token can still verify via /v3/token/identify. Real wire-
+// format kid is still on the v5.0 roadmap.
+const vkFpToKeyId = new Map();
+function fingerprintVk(vk) {
+  return createHash('sha3-256').update(vk).digest().subarray(0, 16).toString('hex');
+}
+
 function b64e(u8) { return Buffer.from(u8).toString('base64'); }
 function b64d(s)  { return new Uint8Array(Buffer.from(s, 'base64')); }
 function b64ue(u8){ return Buffer.from(u8).toString('base64url'); }
 function b64ud(s) { return new Uint8Array(Buffer.from(s, 'base64url')); }
 function hex2u8(h){ return new Uint8Array(Buffer.from(h, 'hex')); }
 
-function loadKeystore() {
+async function loadKeystore() {
+  await ensureChainStore();
+  cleanupStaleTmp(KS_FILE);
   if (!existsSync(KS_FILE)) return;
   const raw = JSON.parse(readFileSync(KS_FILE, 'utf8'));
   let migrated = 0;
@@ -200,17 +354,20 @@ function loadKeystore() {
       signingKey, verifyingKey: b64d(v.vk), encryptKey,
       label: v.label, createdAt: v.createdAt,
     });
-    // Reload chain counter from append-log tail
-    const logPath = join(CHAIN_DIR, keyId + '.log');
-    let ctr = 0n;
-    if (existsSync(logPath)) {
-      const buf = readFileSync(logPath);
-      if (buf.length >= 40) {
-        const tail = buf.subarray(buf.length - 40, buf.length - 32);
-        ctr = tail.readBigUInt64BE(0);
-      }
+    vkFpToKeyId.set(fingerprintVk(b64d(v.vk)), keyId);
+    // Reload chain from append-log with full cryptographic linkage check.
+    // The log's stateHash column is no longer dead weight — it must match the
+    // SHA3-ratchet derivation from the seed, or the boot fails loud. On a
+    // clean log we restore the real post-advance state (not just the seed),
+    // so future advances continue the same hash chain uninterrupted across
+    // restarts.
+    const seed    = Buffer.from(encryptKey.slice(0, 32));
+    const { counter: ctr, state: restoredState, records } =
+          await chainStore.load(keyId, seed);
+    if (records > 0) {
+      console.log(`✔ Chain for ${keyId}: verified ${records} records, counter=${ctr}`);
     }
-    chains.set(keyId, MutationChain.fromState(encryptKey.slice(0, 32), ctr));
+    chains.set(keyId, MutationChain.fromState(restoredState, ctr));
   }
   console.log(`✔ Loaded ${keystore.size} key(s) from ${KS_FILE}`);
   if (migrated > 0) {
@@ -231,59 +388,156 @@ function saveKeystore() {
       createdAt:  v.createdAt,
     };
   }
-  writeFileSync(KS_FILE, JSON.stringify(obj, null, 2), { mode: 0o600 });
+  // Durable: crash between keygen and keystore write would otherwise leak
+  // a chain entry without its key material. Atomic rename + fsync closes that.
+  writeFileDurable(KS_FILE, JSON.stringify(obj, null, 2), { mode: 0o600 });
   try { chmodSync(KS_FILE, 0o600); } catch {}
 }
 
-function appendChain(keyId, counter, stateHash) {
-  const rec = Buffer.alloc(40);
-  rec.writeBigUInt64BE(BigInt(counter), 0);
-  Buffer.from(stateHash).copy(rec, 8);
-  appendFileSync(join(CHAIN_DIR, keyId + '.log'), rec);
+// Pluggable chain store. Today this is the file backend (zero behaviour
+// change from v4.3); when QV_CHAIN_STORE=postgres / s3 / etcd lands in
+// v4.4 the dispatcher in chain-store.mjs picks the right backend. The
+// in-place rewrite of every chain-log call site to chainStore.append /
+// chainStore.load means future backend swaps require no changes here.
+//
+// fsync-by-default; opt out with QV_CHAIN_FSYNC=0 (test envs only).
+const CHAIN_FSYNC = process.env.QV_CHAIN_FSYNC !== '0';
+
+// `createChainStore` returns synchronously for `file` and a Promise for
+// `postgres`. We resolve to a single object before keystore-load reaches
+// chainStore.load. boot() awaits this when needed.
+let chainStore = createChainStore({ chainDir: CHAIN_DIR, fsync: CHAIN_FSYNC });
+async function ensureChainStore() {
+  if (typeof chainStore?.then === 'function') {
+    chainStore = await chainStore;
+    console.log(`✔ ChainStore: ${chainStore.kind}`);
+  }
+}
+
+async function appendChain(keyId, counter, stateHash) {
+  // Cross-host fence verification. If we share DATA_DIR with another node
+  // that stole our writer lease (NFS / SMB / EFS), this throws
+  // WRITER_LOCK_LOST before we corrupt the chain log.
+  if (WRITER_LOCK) WRITER_LOCK.checkFence();
+  // Postgres backend's append is async; file backend is sync. Awaiting
+  // a non-Promise value is harmless.
+  return chainStore.append(keyId, counter, stateHash);
 }
 
 // ─── Minimal HTTP framework ─────────────────────────────────────────────────
 const routes = [];
 // pattern may be a string (exact) or a RegExp (match result passed to handler as 3rd arg)
-function route(method, pattern, handler) { routes.push({ method, pattern, handler }); }
+// template is a stable label for metrics (keeps cardinality bounded — we never
+// label metrics with the raw URL, only the route template, e.g. "/v3/keys/:id").
+function route(method, pattern, handler, template) {
+  if (!template) {
+    template = typeof pattern === 'string'
+      ? pattern
+      : String(pattern)
+          .replace(/^\/\^/, '').replace(/\$\/$/, '')
+          .replace(/\\\//g, '/')
+          .replace(/\(\[\^\/\]\+\)/g, ':id');
+  }
+  routes.push({ method, pattern, handler, template });
+}
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
+  // Do NOT hardcode CORS here: the dispatcher applied applyCors() already,
+  // and security headers were emitted by applySecurityHeaders(). writeHead
+  // would override setHeader() calls if we duplicated them.
   res.writeHead(status, {
-    'content-type':                'application/json; charset=utf-8',
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods':'GET, POST, OPTIONS',
-    'access-control-allow-headers':'content-type, authorization',
-    'content-length':              Buffer.byteLength(payload),
+    'content-type':   'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
   });
   res.end(payload);
 }
 function err(res, status, code, message) { json(res, status, { error: { code, message } }); }
 
-async function readJson(req) {
-  const chunks = [];
-  let total = 0;
-  for await (const c of req) {
-    total += c.length;
-    if (total > 2 * 1024 * 1024) throw new Error('BODY_TOO_LARGE');
-    chunks.push(c);
-  }
-  if (!total) return {};
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-  catch { throw new Error('INVALID_JSON'); }
+// Delegate to readJsonBounded (enforces QV_MAX_BODY_BYTES) and uniformly
+// surface errors with HTTP status codes attached.
+async function readJson(req, max = RATE_CFG.maxBodyBytes) {
+  return readJsonBounded(req, max);
+}
+// Helper: convert a readJson error to a response.
+function respondBodyError(res, e) {
+  const status = e.status || 400;
+  const code   = e.message || 'BAD_REQUEST';
+  return err(res, status, code, code === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
-route('GET', '/v3/health', (_req, res) => {
-  json(res, 200, {
-    status: 'ok', version: '4.0.0-alpha', algorithm: 'ML-DSA-87 (NIST FIPS 204)',
-    sovereign: true, dependencies: 'zero-npm', keysLoaded: keystore.size,
-  });
-});
+// ─── Liveness / Readiness (R-4.3.7) ─────────────────────────────────────────
+// /v3/live   — cheap liveness probe. 200 unless the event loop is wedged.
+//              k8s livenessProbe target. NEVER reports 503 during drain;
+//              draining is a ready-state transition, not a liveness failure.
+// /v3/ready  — functional readiness. 503 until keystore+chains are loaded
+//              or while draining. k8s readinessProbe target.
+// /v3/health — back-compat alias for /v3/ready (v4.2 clients).
+let bootReady = false; // flipped true once loadKeystore() + loadRevoked() complete.
 
-route('GET', '/v3/spec', (_req, res) => {
+route('GET', '/v3/live', publicRL((_req, res) => {
+  json(res, 200, { status: 'alive', pid: process.pid, uptimeSecs: Math.round(process.uptime()) });
+}));
+
+function readyPayload() {
+  const draining = !!(shutdownCtl && shutdownCtl.isDraining());
+  const ok = bootReady && !draining;
+  return {
+    ok,
+    status:       ok ? 'ready' : (draining ? 'draining' : 'starting'),
+    version:      '4.0.0-alpha',
+    algorithm:    'ML-DSA-87 (NIST FIPS 204)',
+    sovereign:    true,
+    dependencies: 'zero-npm',
+    keysLoaded:   keystore.size,
+    inFlight:     shutdownCtl ? shutdownCtl.inFlight : 0,
+    draining,
+  };
+}
+
+route('GET', '/v3/ready', publicRL((_req, res) => {
+  const p = readyPayload();
+  json(res, p.ok ? 200 : 503, p);
+}));
+
+// Operational health surface. Always 200 once the process is up — this is
+// for dashboards, not k8s probes (use /v3/ready for those). Includes:
+//   - readiness flags (boot, draining)
+//   - key + revoked counts
+//   - chain-store backend identity (file vs postgres vs …)
+//   - writer-lock fence number (correctness anchor for L1)
+//   - verify-pool queue depth (saturation indicator)
+//   - process uptime seconds + node version
+// No secrets. Safe to expose without bearer.
+route('GET', '/v3/health', publicRL((_req, res) => {
+  const draining = !!(shutdownCtl && shutdownCtl.isDraining());
+  const queue = (typeof verifyPool !== 'undefined' && verifyPool && verifyPool.queueDepth)
+    ? verifyPool.queueDepth() : 0;
   json(res, 200, {
-    name: 'QuantumVault', version: '4.0.0-alpha',
+    ok:         bootReady && !draining,
+    status:     bootReady ? (draining ? 'draining' : 'ready') : 'starting',
+    version:    '4.0.0-alpha',
+    algorithm:  'ML-DSA-87 (NIST FIPS 204)',
+    sovereign:  true,
+    dependencies: 'zero-npm',
+    keysLoaded: keystore.size,
+    keysRevoked: revoked.size,
+    inFlight:   shutdownCtl ? shutdownCtl.inFlight : 0,
+    draining,
+    chainStore: chainStore?.kind || 'unknown',
+    writerLock: WRITER_LOCK
+      ? { held: true, fence: WRITER_LOCK.fence?.toString() }
+      : { held: false },
+    verifyQueue: { depth: queue, max: METRICS_CFG?.queueMax ?? null },
+    uptimeSeconds: Math.round(process.uptime()),
+    node:       process.version,
+  });
+}));
+
+route('GET', '/v3/spec', publicRL((_req, res) => {
+  json(res, 200, {
+    name: 'Sigvault', version: '4.0.0-alpha',
     signature: 'ML-DSA-87 (FIPS 204)', kem: 'ML-KEM-1024 (FIPS 203)',
     symmetric: 'XChaCha20-Poly1305', hash: 'SHA3-256 (FIPS 202)',
     tokenMagic: '0x51564C54',
@@ -291,19 +545,29 @@ route('GET', '/v3/spec', (_req, res) => {
     tokenTypes: { '0x01': 'Access', '0x02': 'Refresh', '0x03': 'Service' },
     sovereign: { npmDeps: 0, runtime: 'Node.js stdlib only', persistent: true },
   });
-});
+}));
 
-route('POST', '/v3/keygen', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/keygen', admin(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const kp    = generateKeypair();
   const keyId = randomUUID();
   keystore.set(keyId, {
     signingKey: kp.signingKey, verifyingKey: kp.verifyingKey,
     encryptKey: kp.encryptKey, label: body.label ?? keyId, createdAt: Date.now(),
   });
-  chains.set(keyId, new MutationChain());
+  vkFpToKeyId.set(fingerprintVk(kp.verifyingKey), keyId);
+  // Seed the chain deterministically from the encrypt key so reload across
+  // restarts can verify linkage from the same starting point. Without this
+  // the seed would be random per-create, the chain log's stateHash column
+  // would be unverifiable after any restart, and the SHA3 ratchet would be
+  // effectively broken (each restart silently re-seeds).
+  chains.set(keyId, new MutationChain(kp.encryptKey.slice(0, 32)));
   saveKeystore();
+  audit.event('keygen', {
+    requestId: req.requestId, ip: extractClientIp(req),
+    keyId, label: body.label ?? keyId, algorithm: 'ML-DSA-87',
+  });
   json(res, 201, {
     keyId, label: body.label ?? keyId,
     verifyingKeyB64: b64ue(kp.verifyingKey),
@@ -311,17 +575,48 @@ route('POST', '/v3/keygen', async (req, res) => {
     signingKeyLen: kp.signingKey.length, verifyingKeyLen: kp.verifyingKey.length,
     algorithm: 'ML-DSA-87', createdAt: new Date().toISOString(),
   });
-});
+}));
 
-route('POST', '/v3/token/issue', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/issue', admin(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const { keyId, claims, ttl = 3600, suite = 'dilithium5', tokenType = 'access' } = body;
   if (!keyId)  return err(res, 400, 'MISSING_KEY_ID', 'keyId required');
   if (!claims) return err(res, 400, 'MISSING_CLAIMS', 'claims required');
+  // Bound the serialised claims size BEFORE we do any signing work.
+  try {
+    const claimsLen = Buffer.byteLength(JSON.stringify(claims), 'utf8');
+    if (claimsLen > RATE_CFG.maxClaimsBytes) {
+      return err(res, 413, 'CLAIMS_TOO_LARGE', `claims exceed ${RATE_CFG.maxClaimsBytes} bytes`);
+    }
+  } catch { return err(res, 400, 'INVALID_CLAIMS', 'claims must be JSON-serialisable'); }
+  // Structural caps — prevent pathological shape within the byte budget.
+  try { validateClaims(claims, CLAIMS_CFG); }
+  catch (e) { return err(res, 400, e.code || 'INVALID_CLAIMS', e.message); }
   if (revoked.has(keyId)) return err(res, 410, 'KEY_REVOKED', `keyId ${keyId} is revoked`);
   const entry = keystore.get(keyId);
   if (!entry)  return err(res, 404, 'KEY_NOT_FOUND', keyId);
+
+  // Per-keyId rate limit (separate from per-IP). When configured, a
+  // single noisy keyId cannot drain the IP-level admin bucket and
+  // starve sibling keys on the same IP. Inert when QV_RATE_PER_KEY_ISSUE_RPM
+  // is 0 (the default).
+  const kVerdict = limiter.checkKey(keyId, 'issue');
+  if (!kVerdict.allowed) {
+    mRateDenies.inc({ category: 'per_key' });
+    audit.event('ratelimit.deny', {
+      level: 'warn',
+      requestId: req.requestId, ip: extractClientIp(req),
+      keyId, category: 'per_key', limit: kVerdict.limit,
+      retryAfter: kVerdict.resetSec, reason: kVerdict.reason,
+    });
+    res.setHeader('Retry-After',          String(kVerdict.resetSec));
+    res.setHeader('X-RateLimit-Limit',    String(kVerdict.limit));
+    res.setHeader('X-RateLimit-Remaining','0');
+    res.setHeader('X-RateLimit-Reset',    String(kVerdict.resetSec));
+    return err(res, 429, 'RATE_LIMITED_PER_KEY',
+      `keyId ${keyId} exceeded ${kVerdict.limit} rpm; retry in ${kVerdict.resetSec}s`);
+  }
 
   const suiteId = { dilithium5: SUITE_IDS.Dilithium5 }[suite];
   const typeId  = { access: TOKEN_TYPES.Access, refresh: TOKEN_TYPES.Refresh, service: TOKEN_TYPES.Service }[tokenType];
@@ -334,18 +629,31 @@ route('POST', '/v3/token/issue', async (req, res) => {
       signingKeySeed: entry.signingKey, encryptKey: entry.encryptKey,
       chain, claims, ttl, suite: suiteId, tokenType: typeId,
     });
-    appendChain(keyId, chain.counter, chain.state);
+    await appendChain(keyId, chain.counter, chain.state);
+    audit.event('token.issue', {
+      requestId: req.requestId, ip: extractClientIp(req),
+      keyId, suite, tokenType, ttlSecs: ttl,
+      sizeBytes: tokenBytes.length, mutationCtr: Number(chain.counter),
+    });
+    mTokIssue.inc({ suite, tokenType, result: 'ok' });
     json(res, 200, {
       tokenHex, tokenB64: b64ue(tokenBytes), sizeBytes: tokenBytes.length,
       issuedAt: new Date().toISOString(), ttlSecs: ttl,
       mutationCtr: Number(chain.counter), suite, tokenType,
     });
-  } catch (e) { err(res, 500, 'ISSUE_FAILED', e.message); }
-});
+  } catch (e) {
+    audit.event('token.issue', {
+      level: 'error', requestId: req.requestId, ip: extractClientIp(req),
+      keyId, suite, tokenType, reason: e.message,
+    });
+    mTokIssue.inc({ suite, tokenType, result: 'error' });
+    err(res, 500, 'ISSUE_FAILED', e.message);
+  }
+}));
 
-route('POST', '/v3/token/verify', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/verify', verifyRL(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const { keyId, token } = body;
   if (!keyId) return err(res, 400, 'MISSING_KEY_ID', 'keyId required');
   if (!token) return err(res, 400, 'MISSING_TOKEN',  'token required');
@@ -365,16 +673,64 @@ route('POST', '/v3/token/verify', async (req, res) => {
       token: tokenBytes, verifyingKey: entry.verifyingKey,
       encryptKey: entry.encryptKey, chain: vchain,
     });
+    mTokVerify.inc({ result: 'ok' });
     json(res, 200, {
       valid: true, claims: out.claims,
       issuedAt: new Date(Number(out.issuedAt / 1000n)).toISOString(),
       ttlSecs: out.ttl, mutationCtr: Number(out.mutationCtr),
     });
   } catch (e) {
+    mTokVerify.inc({ result: 'invalid' });
     res.writeHead(401, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ valid: false, error: { code: e.message } }));
   }
-});
+}));
+
+// ─── POST /v3/token/verify-auto ─────────────────────────────────────────────
+// Same response shape as /v3/token/verify but the caller does NOT supply
+// keyId — the server trial-verifies against each non-revoked key in the
+// keystore until one succeeds. O(N) over active keys; N is typically ≤10.
+//
+// Operationally closes limitation #2 (no kid in the wire format) without
+// breaking the wire. The wire-format kid is still on the v5.0 roadmap;
+// this endpoint is the bridge until then.
+route('POST', '/v3/token/verify-auto', verifyRL(async (req, res) => {
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  const { token } = body;
+  if (!token) return err(res, 400, 'MISSING_TOKEN', 'token required');
+
+  let tokenBytes;
+  try { tokenBytes = /^[0-9a-f]+$/i.test(token) ? hex2u8(token) : b64ud(token); }
+  catch { return err(res, 400, 'INVALID_TOKEN', 'hex or base64url'); }
+
+  let lastError = 'NO_KEY_MATCHED';
+  for (const [keyId, entry] of keystore.entries()) {
+    if (revoked.has(keyId)) continue;
+    const vchain = MutationChain.fromState(entry.encryptKey.slice(0, 32), 0n);
+    try {
+      const out = verifyToken({
+        token: tokenBytes, verifyingKey: entry.verifyingKey,
+        encryptKey: entry.encryptKey, chain: vchain,
+      });
+      mTokVerify.inc({ result: 'ok' });
+      return json(res, 200, {
+        valid: true,
+        keyId,
+        claims: out.claims,
+        issuedAt: new Date(Number(out.issuedAt / 1000n)).toISOString(),
+        ttlSecs: out.ttl,
+        mutationCtr: Number(out.mutationCtr),
+      });
+    } catch (e) {
+      lastError = e.message;
+      // continue to next key
+    }
+  }
+  mTokVerify.inc({ result: 'invalid' });
+  res.writeHead(401, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ valid: false, error: { code: 'NO_KEY_MATCHED', detail: lastError } }));
+}));
 
 // ─── POST /v3/token/batch-verify ────────────────────────────────────────────
 // Body: { items: [ { keyId, token }, ... ] }  (max 256 per request)
@@ -386,13 +742,25 @@ route('POST', '/v3/token/verify', async (req, res) => {
 // round-trips — the big win for most real-world batch workloads.
 // When we swap in the native qv.dll backend, Promise.all dispatches to a
 // worker_threads pool and becomes true N-core parallel.
-route('POST', '/v3/token/batch-verify', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/batch-verify', verifyRL(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const items = body.items;
   if (!Array.isArray(items))       return err(res, 400, 'MISSING_ITEMS',  'items[] required');
   if (items.length === 0)          return err(res, 400, 'EMPTY_BATCH',   'items[] must be non-empty');
   if (items.length > 256)          return err(res, 400, 'BATCH_TOO_LARGE','max 256 per request');
+
+  // Back-pressure: if the verify-pool queue is near saturation and accepting
+  // this batch would push it past the bound, fail-fast with 503 so the caller
+  // retries after its own Retry-After rather than piling up pending promises.
+  if (verifyPool) {
+    const headroom = verifyPool.queueMax - verifyPool.queueDepth;
+    if (items.length > headroom + verifyPool.size) {
+      res.setHeader('retry-after', '1');
+      return err(res, 503, 'POOL_OVERLOADED',
+        `verify pool saturated (queue=${verifyPool.queueDepth}/${verifyPool.queueMax})`);
+    }
+  }
 
   const t0 = process.hrtime.bigint();
   const results = await Promise.all(items.map(async (it, index) => {
@@ -412,6 +780,9 @@ route('POST', '/v3/token/batch-verify', async (req, res) => {
       if (verifyPool) {
         const chainSeed = entry.encryptKey.slice(0, 32);
         const r = await verifyPool.run({
+          // keyId is read by the affinity dispatcher (see verify-pool.mjs).
+          // Round-robin mode ignores it.
+          keyId,
           // Transfer as plain buffers — structured clone handles zero-copy.
           tokenBytes:   tokenBytes.buffer.slice(tokenBytes.byteOffset, tokenBytes.byteOffset + tokenBytes.byteLength),
           verifyingKey: entry.verifyingKey.buffer.slice(entry.verifyingKey.byteOffset, entry.verifyingKey.byteOffset + entry.verifyingKey.byteLength),
@@ -446,21 +817,132 @@ route('POST', '/v3/token/batch-verify', async (req, res) => {
                throughput: Number((results.length / (durationMs/1000)).toFixed(0)),
                workers: verifyPool ? verifyPool.size : 0 },
   });
-});
+}));
 
-route('POST', '/v3/token/inspect', async (req, res) => {
-  const body = await readJson(req).catch(e => ({ _err: e.message }));
-  if (body._err) return err(res, 400, 'BAD_REQUEST', body._err);
+route('POST', '/v3/token/inspect', verifyRL(async (req, res) => {
+  const body = await readJson(req).catch(e => ({ _err: e.message, _status: e.status || 400 }));
+  if (body._err) return err(res, body._status, body._err, body._err === 'BODY_TOO_LARGE' ? `body exceeds ${RATE_CFG.maxBodyBytes} bytes` : 'invalid JSON');
   const { token } = body;
   if (!token) return err(res, 400, 'MISSING_TOKEN', 'token required');
   try {
     const tokenBytes = /^[0-9a-f]+$/i.test(token) ? hex2u8(token) : b64ud(token);
     json(res, 200, inspectToken(tokenBytes));
   } catch (e) { err(res, 400, 'INSPECT_FAILED', e.message); }
-});
+}));
+
+// ─── Falcon bridge endpoints ────────────────────────────────────────────────
+// Network-accessible Falcon-512 / Falcon-1024 sign + verify, delegating
+// to qv-cli (Rust + PQClean) over a child process. Latency is high
+// (~50–100 ms per spawn), so /v3/admin/falcon/sign is admin-only and
+// rate-limited; /v3/falcon/verify is public + verify-bucket-limited.
+//
+// These endpoints accept raw key + message bytes and return raw
+// signatures. They do NOT issue Sigvault tokens — full
+// suite=falcon{512,1024} on /v3/token/issue requires SDK-side Falcon
+// support and is on the v4.4 roadmap (see L9 in
+// docs/story/15-limitations.md). This bridge is the substrate that
+// will plug under that work; today it lets operators do ad-hoc PQ
+// signing without leaving the server.
+
+function decodeBytesField(s, field) {
+  if (typeof s !== 'string' || !s) {
+    const e = new Error(`MISSING_${field.toUpperCase()}`);
+    e.code = `MISSING_${field.toUpperCase()}`;
+    throw e;
+  }
+  // hex first; fall back to base64url (also accepts standard base64).
+  if (/^[0-9a-f]+$/i.test(s) && s.length % 2 === 0) return Buffer.from(s, 'hex');
+  try {
+    return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  } catch {
+    const e = new Error(`INVALID_${field.toUpperCase()}`);
+    e.code = `INVALID_${field.toUpperCase()}`;
+    throw e;
+  }
+}
+
+route('POST', '/v3/admin/falcon/sign', admin(async (req, res) => {
+  if (!FALCON_PROBE.available) {
+    return err(res, 503, 'FALCON_BRIDGE_UNAVAILABLE', FALCON_PROBE.reason);
+  }
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  const { n, signingKey, message } = body;
+  if (n !== 512 && n !== 1024) return err(res, 400, 'FALCON_BAD_N', 'n must be 512 or 1024');
+  let sk, msg;
+  try {
+    sk  = decodeBytesField(signingKey, 'signingKey');
+    msg = decodeBytesField(message,    'message');
+  } catch (e) { return err(res, 400, e.code || 'INVALID_REQUEST', e.message); }
+  try {
+    const sig = await falconSign({ signingKey: sk, message: msg, n });
+    audit.event('falcon.sign', {
+      requestId: req.requestId, ip: extractClientIp(req),
+      n, msgBytes: msg.length, sigBytes: sig.length,
+    });
+    json(res, 200, { sigHex: sig.toString('hex'), sigBytes: sig.length, n });
+  } catch (e) {
+    audit.event('falcon.sign', {
+      level: 'error',
+      requestId: req.requestId, ip: extractClientIp(req),
+      n, msgBytes: msg.length, error: e.code || 'FALCON_SIGN_FAILED',
+    });
+    return err(res, 500, e.code || 'FALCON_SIGN_FAILED', e.message);
+  }
+}));
+
+route('POST', '/v3/falcon/verify', verifyRL(async (req, res) => {
+  if (!FALCON_PROBE.available) {
+    return err(res, 503, 'FALCON_BRIDGE_UNAVAILABLE', FALCON_PROBE.reason);
+  }
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  const { n, verifyingKey, message, signature } = body;
+  if (n !== 512 && n !== 1024) return err(res, 400, 'FALCON_BAD_N', 'n must be 512 or 1024');
+  let vk, msg, sig;
+  try {
+    vk  = decodeBytesField(verifyingKey, 'verifyingKey');
+    msg = decodeBytesField(message,      'message');
+    sig = decodeBytesField(signature,    'signature');
+  } catch (e) { return err(res, 400, e.code || 'INVALID_REQUEST', e.message); }
+  try {
+    const valid = await falconVerify({ verifyingKey: vk, message: msg, signature: sig, n });
+    json(res, 200, { valid, n });
+  } catch (e) {
+    return err(res, 500, e.code || 'FALCON_VERIFY_FAILED', e.message);
+  }
+}));
 
 // ─── Key discovery (JWKS-equivalent) ────────────────────────────────────────
-route('GET', '/v3/keys', (_req, res) => {
+// O(1) verifying-key → keyId lookup. Closes limitation #2 operationally
+// without a wire-format change. A caller that holds a VK (from
+// /v3/keys/{keyId}/vk.bin or from prior knowledge) can compute the
+// fingerprint locally and resolve the keyId in one call.
+//
+// Body: { vkB64u: <base64url verifying key> }      OR
+//       { fingerprint: <hex 32-char SHA3-256[:16]> }
+route('POST', '/v3/keys/identify', publicRL(async (req, res) => {
+  const body = await readJsonBounded(req, RATE_CFG.maxBodyBytes);
+  if (body._err) return err(res, body._status, body._err, 'invalid JSON');
+  let fp;
+  if (typeof body.fingerprint === 'string') {
+    if (!/^[0-9a-f]{32}$/i.test(body.fingerprint))
+      return err(res, 400, 'INVALID_FINGERPRINT', 'expect 32 hex chars');
+    fp = body.fingerprint.toLowerCase();
+  } else if (typeof body.vkB64u === 'string') {
+    let vk;
+    try { vk = Buffer.from(body.vkB64u.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
+    catch { return err(res, 400, 'INVALID_VK', 'vkB64u not base64url'); }
+    fp = fingerprintVk(vk);
+  } else {
+    return err(res, 400, 'INVALID_REQUEST', 'expect fingerprint or vkB64u');
+  }
+  const keyId = vkFpToKeyId.get(fp);
+  if (!keyId) return err(res, 404, 'KEY_NOT_FOUND', `no key matches fingerprint ${fp}`);
+  json(res, 200, { keyId, fingerprint: fp, revoked: revoked.has(keyId) });
+}));
+
+route('GET', '/v3/keys', publicRL((_req, res) => {
   const list = [];
   for (const [keyId, v] of keystore.entries()) {
     list.push({
@@ -470,9 +952,9 @@ route('GET', '/v3/keys', (_req, res) => {
     });
   }
   json(res, 200, { keys: list, count: list.length });
-});
+}));
 
-route('GET', /^\/v3\/keys\/([^/]+)$/, (_req, res, m) => {
+route('GET', /^\/v3\/keys\/([^/]+)$/, publicRL((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   const v = keystore.get(keyId);
   if (!v) return err(res, 404, 'KEY_NOT_FOUND', keyId);
@@ -483,49 +965,134 @@ route('GET', /^\/v3\/keys\/([^/]+)$/, (_req, res, m) => {
     verifyingKeyHex: Buffer.from(v.verifyingKey).toString('hex'),
     verifyingKeyLen: v.verifyingKey.length,
   });
-});
+}));
 
-route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, (_req, res, m) => {
+route('GET', /^\/v3\/keys\/([^/]+)\/vk\.bin$/, publicRL((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   const v = keystore.get(keyId);
   if (!v) return err(res, 404, 'KEY_NOT_FOUND', keyId);
   res.writeHead(200, {
-    'content-type':                'application/octet-stream',
-    'content-length':              v.verifyingKey.length,
-    'access-control-allow-origin': '*',
-    'cache-control':               'public, max-age=3600',
+    'content-type':   'application/octet-stream',
+    'content-length': v.verifyingKey.length,
+    'cache-control':  'public, max-age=3600',
   });
   res.end(Buffer.from(v.verifyingKey));
-});
+}));
 
-route('DELETE', /^\/v3\/keys\/([^/]+)$/, (_req, res, m) => {
+// Per-key rate-limit observability. Returns the bucket state for the
+// keyId without consuming a token. Useful for dashboards and ops
+// runbooks that need to know whether a tenant is approaching their
+// ceiling. No bearer required — this surface reveals only the keyId
+// (which the caller already supplied), the configured ceiling, and
+// the current refilled token count. Leaks no signing material.
+route('GET', /^\/v3\/keys\/([^/]+)\/quota$/, publicRL((_req, res, m) => {
+  const keyId = decodeURIComponent(m[1]);
+  if (!keystore.has(keyId)) return err(res, 404, 'KEY_NOT_FOUND', keyId);
+  const snap = limiter.quotaSnapshot(keyId, 'issue');
+  json(res, 200, {
+    keyId,
+    revoked: revoked.has(keyId),
+    issue: snap,
+  });
+}));
+
+route('DELETE', /^\/v3\/keys\/([^/]+)$/, admin((req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   if (!keystore.has(keyId)) return err(res, 404, 'KEY_NOT_FOUND', keyId);
   if (revoked.has(keyId))    return err(res, 409, 'ALREADY_REVOKED', keyId);
   revoked.add(keyId);
   saveRevoked();
+  audit.event('token.revoke', {
+    level: 'warn',
+    requestId: req.requestId, ip: extractClientIp(req),
+    keyId,
+  });
+  mRevoked.set(revoked.size);
   json(res, 200, { keyId, revoked: true, revokedAt: new Date().toISOString() });
-});
+}));
 
-route('GET', '/v3/revoked', (_req, res) => {
+route('GET', '/v3/revoked', publicRL((_req, res) => {
   json(res, 200, { revoked: [...revoked], count: revoked.size });
-});
+}));
 
-// ─── Dispatcher ─────────────────────────────────────────────────────────────
-function applyCors(res) {
-  if (!CORS_ORIGIN) return;
-  res.setHeader('access-control-allow-origin',  CORS_ORIGIN);
-  res.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('access-control-allow-headers', 'content-type, authorization');
-  res.setHeader('vary', 'origin');
+// ─── /v3/metrics (Prometheus text exposition) ───────────────────────────────
+// Admin-bearer gated by default; public only when QV_METRICS_PUBLIC=true.
+function metricsHandler(req, res) {
+  if (!METRICS_CFG.enabled) return err(res, 404, 'NOT_FOUND', 'metrics disabled');
+  // Refresh gauges on demand so the scrape sees current values.
+  mKeys.set(keystore.size);
+  mRevoked.set(revoked.size);
+  mInflight.set(shutdownCtl ? shutdownCtl.inFlight : 0);
+  mUptime.set(Math.round(process.uptime()));
+  if (verifyPool) {
+    mQueueDepth.set(verifyPool.queueDepth);
+    // Re-apply the cumulative rejects counter (pool owns the monotonic count).
+    mQueueRejects.inc({}, Math.max(0, verifyPool.rejects - (mQueueRejects._last || 0)));
+    mQueueRejects._last = verifyPool.rejects;
+  }
+  const body = metrics.render();
+  res.writeHead(200, {
+    'content-type':   'text/plain; version=0.0.4; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+  });
+  res.end(body);
+}
+if (METRICS_CFG.public) {
+  route('GET', '/v3/metrics', publicRL(metricsHandler));
+} else {
+  route('GET', '/v3/metrics', admin(metricsHandler));
 }
 
+// ─── Dispatcher ─────────────────────────────────────────────────────────────
+// Placeholder; real controller is installed after `server` is created so the
+// health handler (which runs before listen()) can reference `shutdownCtl`.
+let shutdownCtl = null;
+
 const server = createServer(async (req, res) => {
-  applyCors(res);
+  // 0. Request-Id: accept from caller if safe, else mint UUID. Echoed back.
+  const reqId = extractOrMintRequestId(req);
+  applyRequestId(req, res, reqId);
+  // W3C Trace Context (limitation #8). Inherit traceparent if present,
+  // mint a fresh trace otherwise. Every audit event carries traceId+spanId.
+  const trace = applyTrace(req, res);
+  const t0 = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durSecs = Number(process.hrtime.bigint() - t0) / 1e9;
+    let pathname = req.url;
+    try { pathname = new URL(req.url, `http://${req.headers.host || 'x'}`).pathname; } catch {}
+    // Bucket metrics by route TEMPLATE, not raw URL — avoids cardinality blow-up.
+    const mPath = req._routeTemplate || 'unmatched';
+    audit.event('http.request', {
+      level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+      requestId: reqId,
+      traceId:      trace.traceId,
+      spanId:       trace.spanId,
+      parentSpanId: trace.parentSpanId,
+      traceInherited: trace.inherited,
+      ip: extractClientIp(req),
+      method: req.method,
+      path:   pathname,
+      template: mPath,
+      status: res.statusCode,
+      ms:     Number((durSecs * 1000).toFixed(2)),
+    });
+    mHttpReqs.inc({ method: req.method, path: mPath, status: String(res.statusCode) });
+    mHttpDur.observe({ method: req.method, path: mPath }, durSecs);
+  });
+
+  // 1. Security headers (HSTS, CSP, X-Frame-Options, etc.) on every response.
+  applySecurityHeaders(res, SEC_CFG);
+
+  // 2. CORS: returns true if a preflight OPTIONS was terminated by the CORS
+  //    layer itself. Otherwise falls through to routing.
+  if (applyCorsHeaders(req, res, CORS_CFG)) return;
+
+  // 3. Unrecognised OPTIONS (no CORS origin or no match) — 204 with no body.
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
     return res.end();
   }
+
   const url = new URL(req.url, `http://${req.headers.host}`);
   let matched = null, matchResult = null;
   for (const r of routes) {
@@ -538,21 +1105,69 @@ const server = createServer(async (req, res) => {
     }
   }
   if (!matched) return err(res, 404, 'NOT_FOUND', `${req.method} ${url.pathname}`);
+  req._routeTemplate = matched.template;
   try { await matched.handler(req, res, matchResult); }
   catch (e) { err(res, 500, 'INTERNAL', e.message); }
 });
 
+// ─── Graceful shutdown (R-4.3.8) ────────────────────────────────────────────
+const SHUTDOWN_TIMEOUT_MS = Number(process.env.QV_SHUTDOWN_TIMEOUT_MS ?? 30000);
+shutdownCtl = createShutdown({
+  server,
+  teardown: [
+    async () => {
+      if (verifyPool) {
+        try { await verifyPool.shutdown(); } catch {}
+      }
+    },
+    () => { try { audit.close(); } catch {} },
+    () => { try { clearInterval(_sweepTimer); } catch {} },
+    () => { try { if (WRITER_LOCK) WRITER_LOCK.release(); } catch {} },
+  ],
+  timeoutMs: SHUTDOWN_TIMEOUT_MS,
+  log: (msg, level = 'info') => {
+    audit.event('server.shutdown', { level, reason: msg });
+    const line = `[shutdown] ${msg}\n`;
+    if (level === 'error') process.stderr.write(line);
+    else                   process.stdout.write(line);
+  },
+});
+shutdownCtl.install();
+
+// Wrap the dispatcher so in-flight requests are tracked. We can't re-wrap
+// the createServer listener at this point, so we install a one-shot counter
+// via 'request' event instead — but createServer already registered our
+// listener. Instead, call beginRequest/endRequest from within the dispatcher:
+server.on('request', (req, res) => {
+  shutdownCtl.beginRequest();
+  let done = false;
+  const finish = () => { if (done) return; done = true; shutdownCtl.endRequest(); };
+  res.on('finish', finish);
+  res.on('close',  finish);
+});
+
 // ─── Boot ───────────────────────────────────────────────────────────────────
-loadKeystore();
-loadRevoked();
-server.listen(PORT, HOST, () => {
-  console.log(`\n╔════════════════════════════════════════════╗`);
-  console.log(`║  QuantumVault v4.1 — Sovereign Server      ║`);
+// Async boot path because the Postgres ChainStore connects + ensures the
+// schema before the first keystore load. The file backend resolves
+// instantly so this path is only ~ms longer than the v4.3 sync boot.
+(async () => {
+  try {
+    await loadKeystore();
+    loadRevoked();
+    bootReady = true;
+    server.listen(PORT, HOST, () => {
+      console.log(`\n╔════════════════════════════════════════════╗`);
+      console.log(`║  Sigvault v4.1 — Sovereign Server      ║`);
   console.log(`║  http://${HOST}:${String(PORT).padEnd(5)}                     ║`);
   console.log(`║  Zero npm deps · Node stdlib only         ║`);
   console.log(`║  Data dir: ${DATA_DIR.slice(-28).padEnd(30)}  ║`);
-  if (CORS_ORIGIN) console.log(`║  CORS: ${CORS_ORIGIN.padEnd(34)}  ║`);
-  console.log(`╚════════════════════════════════════════════╝\n`);
-});
+      if (CORS_CFG.mode !== 'off') console.log(`║  CORS: ${CORS_CFG.mode.padEnd(34)}  ║`);
+      console.log(`╚════════════════════════════════════════════╝\n`);
+    });
+  } catch (e) {
+    console.error(`[boot] FATAL: ${e.stack || e.message}`);
+    process.exit(1);
+  }
+})();
 
 export default server;

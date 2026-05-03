@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "QuantumVault documentation site — Vite + React + tekivex-ui.",
+  "description": "Sigvault documentation site — Vite + React + tekivex-ui.",
   "scripts": {
     "dev":     "vite",
     "build":   "vite build",

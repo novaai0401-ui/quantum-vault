@@ -1,4 +1,4 @@
-// QuantumVault v4.0 - Go cgo Demo
+// Sigvault v4.0 - Go cgo Demo
 // =================================
 // Calls qv.dll directly via cgo. NO HTTP. NO external modules.
 //
@@ -30,7 +30,7 @@ import (
 
 func main() {
 	fmt.Println("\n================================================")
-	fmt.Println("  QuantumVault v4.0 -- Go cgo Demo")
+	fmt.Println("  Sigvault v4.0 -- Go cgo Demo")
 	fmt.Println("  cgo | NO HTTP | stdlib only")
 	fmt.Println("================================================")
 	fmt.Printf("ABI version: %d\n", C.qv_abi_version())
@@ -40,7 +40,7 @@ func main() {
 	sk  := make([]byte, skLen)
 	vk  := make([]byte, vkLen)
 	sig := make([]byte, sigLen)
-	msg := []byte("QuantumVault sovereign -- Go says hi")
+	msg := []byte("Sigvault sovereign -- Go says hi")
 
 	// [1] Keygen
 	t := time.Now()

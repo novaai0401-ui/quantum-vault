@@ -21,7 +21,7 @@ pub struct IssueParams<'a> {
     pub chain:        &'a mut MutationChain,
 }
 
-/// Issue a new QuantumVault token (ML-DSA-87 default path).
+/// Issue a new Sigvault token (ML-DSA-87 default path).
 pub fn issue_token(p: IssueParams<'_>) -> QVResult<QVRawToken> {
     let (shell, msg) = prepare_unsigned(
         p.suite, p.token_type, p.ttl_secs, p.device_fp,

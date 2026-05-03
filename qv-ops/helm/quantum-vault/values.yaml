@@ -1,0 +1,105 @@
+# Default values for quantum-vault.
+# This is a YAML-formatted file. The values here are deliberately
+# safe-by-default for a single-replica deployment.
+
+image:
+  repository: ghcr.io/007krcs/qv-server
+  tag: ""             # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+# Number of replicas. The MutationChain is single-writer (Chapter 6),
+# so production should keep replicaCount=1 until a multi-writer
+# coordinator (v4.4) is configured.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 7433
+
+# K8s probes target /v3/live (liveness) and /v3/ready (readiness).
+probes:
+  liveness:
+    initialDelaySeconds: 5
+    periodSeconds:       10
+    timeoutSeconds:      3
+  readiness:
+    initialDelaySeconds: 2
+    periodSeconds:       5
+    timeoutSeconds:      3
+
+# Resources sized for the reference benchmark (~1k issues/sec).
+# Adjust upward for higher rates.
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+# Persistent volume for $QV_DATA_DIR. NEVER set persistence.enabled=false
+# in production — you will lose every signing key on pod restart.
+persistence:
+  enabled: true
+  storageClass: ""    # "" = cluster default
+  size: 1Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Pod / container hardening.
+podSecurityContext:
+  fsGroup: 10001
+  runAsUser: 10001
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# Operator-supplied env. Set this from a Secret (recommended) or wire
+# it into your secrets manager (see secret.* below).
+env: []
+# - name: QV_HOST
+#   value: "0.0.0.0"
+
+# Required Secret containing at least:
+#   QV_ADMIN_TOKEN_SHA256  (32-byte sha256 hex of the admin bearer)
+# Plus exactly one of:
+#   QV_MASTER_KEY_HEX      (env-backend master key)
+#   QV_MASTER_KEY_EXEC     (exec-backend command, e.g. AWS KMS wrapper)
+secret:
+  create: false      # set true to render templates/secret.yaml from .Values.secret.data
+  name:   qv-admin   # name of an existing Secret if create=false
+  data:
+    # QV_ADMIN_TOKEN_SHA256: <hex>
+    # QV_MASTER_KEY_HEX:     <hex>
+
+# Network policy / mesh / ingress are deliberately NOT shipped here —
+# they're operator-owned and depend on your cluster's stack
+# (Cilium / Calico / Linkerd / Istio / Cloudflare Tunnel). Wire your
+# own; expose only the qv-server Service to the trusted side.
+ingress:
+  enabled: false
+
+# CIDR allowlist for admin endpoints. Empty = allowlist disabled.
+adminAllowCidrs: ""
+metricsAllowCidrs: ""  # inherits adminAllowCidrs if blank
+
+# Rate-limit knobs (tokens-per-minute per IP).
+rateLimits:
+  publicRpm:   600
+  verifyRpm:  1200
+  adminRpm:    120
+  authFailRpm: 30
+
+# Audit log rotation.
+audit:
+  rotateBytes: 67108864    # 64 MiB
+  rotateKeep:  10
+
+# Shutdown grace.
+shutdownTimeoutMs: 30000

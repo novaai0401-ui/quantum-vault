@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import urllib.error
 
-from quantumvault import QVClient, QVError, QVHTTPError, QVVerifyError
+from sigvault import QVClient, QVError, QVHTTPError, QVVerifyError
 
 
 def _mock_response(body: dict, status: int = 200):

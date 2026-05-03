@@ -5,7 +5,7 @@ export default function Architecture() {
     <>
       <h1>Architecture</h1>
       <p className="lead">
-        QuantumVault is organised as a small Rust core with narrow
+        Sigvault is organised as a small Rust core with narrow
         embedding surfaces. The core knows how to mint, verify, and
         mutate tokens. Everything else — HTTP, FFI, WASM, language
         bindings — is a thin adapter that forwards bytes into that core.

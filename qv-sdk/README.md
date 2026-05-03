@@ -1,4 +1,4 @@
-# @quantumvault/sdk
+# @sigvault/sdk
 
 Post-quantum (ML-DSA-87) cryptographic tokens for JavaScript. Runs in Node 18+,
 Deno, Bun, Cloudflare Workers, and modern browsers. Zero native dependencies —
@@ -7,7 +7,7 @@ built on [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum),
 [@noble/hashes](https://github.com/paulmillr/noble-hashes).
 
 ```bash
-npm install @quantumvault/sdk
+npm install @sigvault/sdk
 ```
 
 ## Quickstart
@@ -16,7 +16,7 @@ npm install @quantumvault/sdk
 import {
   generateKeypair, MutationChain,
   issueToken, verifyToken, inspectToken,
-} from '@quantumvault/sdk';
+} from '@sigvault/sdk';
 
 // 1. One-time setup: generate keys + a replay-protection chain.
 const { signingKey, verifyingKey, encryptKey } = generateKeypair();
@@ -44,7 +44,7 @@ console.log(result.claims); // { sub: 'user-123', role: 'admin' }
 
 ## Why not JWT?
 
-| | JWT (RS256 / ES256) | QuantumVault (ML-DSA-87) |
+| | JWT (RS256 / ES256) | Sigvault (ML-DSA-87) |
 |---|---|---|
 | Quantum-safe | ❌ | ✅ NIST FIPS 204 |
 | Payload encrypted | ❌ base64 only | ✅ XChaCha20-Poly1305 |

@@ -1,0 +1,95 @@
+# Sigvault CI — runs on every push and PR.
+#
+# Three guarantees this workflow makes:
+#   1. Server stays zero-dep (dep-audit)
+#   2. Server tests pass on Linux + macOS + Windows
+#   3. Conformance vectors pass
+
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/*", "fix/*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dep-audit:
+    name: dep-audit (zero-dep policy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node qv-ops/scripts/dep-audit.mjs
+
+  conformance:
+    name: spec conformance vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node qv-spec/test-vectors/harness.mjs
+
+  openapi-sync:
+    name: openapi.yaml + error-codes.md ↔ server in lock-step
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node qv-ops/scripts/openapi-sync.mjs --verbose
+
+  test:
+    name: tests (${{ matrix.os }}, node ${{ matrix.node }})
+    needs: [dep-audit, conformance, openapi-sync]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run server tests
+        working-directory: qv-server
+        run: npm test
+
+  sbom:
+    name: SBOM (CycloneDX 1.5)
+    needs: dep-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: node qv-ops/scripts/sbom.mjs > sbom.cdx.json
+      - name: Verify SBOM is well-formed
+        run: |
+          node -e '
+            const j = JSON.parse(require("fs").readFileSync("sbom.cdx.json", "utf8"));
+            if (j.bomFormat !== "CycloneDX") { console.error("not CycloneDX"); process.exit(1); }
+            if (j.specVersion !== "1.5") { console.error("wrong specVersion"); process.exit(1); }
+            const deps = j.dependencies?.[0]?.dependsOn ?? null;
+            if (!Array.isArray(deps) || deps.length !== 0) {
+              console.error("dependencies[0].dependsOn must be empty array — found", deps);
+              process.exit(1);
+            }
+            console.log("SBOM ok — " + j.components.length + " components, zero deps");
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx-1.5
+          path: sbom.cdx.json
+          retention-days: 90

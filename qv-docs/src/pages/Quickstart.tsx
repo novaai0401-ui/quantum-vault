@@ -5,7 +5,7 @@ export default function Quickstart() {
     <>
       <h1>Install &amp; Quickstart</h1>
       <p className="lead">
-        QuantumVault ships on every major package registry. Pick the
+        Sigvault ships on every major package registry. Pick the
         ecosystem you already use — you'll have a signed, verified
         post-quantum token in under a minute, no <code>git clone</code>
         required.
@@ -23,7 +23,7 @@ export default function Quickstart() {
         </TkxTabList>
 
         <TkxTabPanel>
-          <pre><code>{`npm install @quantumvault/sdk`}</code></pre>
+          <pre><code>{`npm install @sigvault/sdk`}</code></pre>
           <p>
             Works in Node 18+, Deno, Bun, and Cloudflare Workers. Pure
             JavaScript — no native build step, no post-install scripts.
@@ -32,7 +32,7 @@ export default function Quickstart() {
         </TkxTabPanel>
 
         <TkxTabPanel>
-          <pre><code>{`npm install @quantumvault/wasm`}</code></pre>
+          <pre><code>{`npm install @sigvault/wasm`}</code></pre>
           <p>
             127 KB <code>.wasm</code> + a tiny portable loader. Works in
             browsers, Workers, Deno, and Node. Auto-wires one host import
@@ -41,7 +41,7 @@ export default function Quickstart() {
         </TkxTabPanel>
 
         <TkxTabPanel>
-          <pre><code>{`pip install quantumvault`}</code></pre>
+          <pre><code>{`pip install sigvault`}</code></pre>
           <p>
             Pure-Python REST client, stdlib-only (no <code>requests</code>, no
             compiled wheels). One universal wheel works on Python 3.8+ across
@@ -87,7 +87,7 @@ tar -xzf libqv-*.tar.gz
       <pre><code>{`import {
   generateKeypair, MutationChain,
   issueToken, verifyToken,
-} from '@quantumvault/sdk';
+} from '@sigvault/sdk';
 
 // 1. one-time setup
 const { signingKey, verifyingKey, encryptKey } = generateKeypair();
@@ -157,9 +157,9 @@ curl -s -X POST http://localhost:7433/v3/token/issue \\
 # 3. verify comes back in the same response — or POST /v3/token/verify later.`}</code></pre>
 
       <TkxAlert variant="info" title="Which surface should I pick?">
-        <strong>Front-end or isomorphic JS?</strong> <code>@quantumvault/sdk</code>.
+        <strong>Front-end or isomorphic JS?</strong> <code>@sigvault/sdk</code>.
         <br/>
-        <strong>Browser bundle size matters?</strong> <code>@quantumvault/wasm</code> (~48 KB gzipped).
+        <strong>Browser bundle size matters?</strong> <code>@sigvault/wasm</code> (~48 KB gzipped).
         <br/>
         <strong>Rust backend?</strong> <code>qv-core</code> with the <code>falcon</code> feature.
         <br/>

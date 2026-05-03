@@ -3,7 +3,7 @@ name    = "qv-wasm"
 version = "0.1.0"
 edition = "2021"
 
-# Sovereign WASM build of QuantumVault.
+# Sovereign WASM build of Sigvault.
 # Build:
 #   rustup target add wasm32-unknown-unknown
 #   cargo build -p qv-wasm --release --target wasm32-unknown-unknown
