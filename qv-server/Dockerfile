@@ -39,22 +39,24 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
 LABEL org.opencontainers.image.vendor="007krcs"
 
 # ── Hardened runtime ────────────────────────────────────────────────────────
-# Run as a non-root system user for defense-in-depth. UID/GID pinned so
+# Run as a non-root user for defense-in-depth. UID/GID pinned to 10001 so
 # volume permissions don't drift across image rebuilds.
 #
-# We deliberately avoid Alpine's `-S` (system-user) flag here. Under
-# QEMU emulation for cross-arch builds (linux/arm64 from an amd64 host),
-# `adduser -S` runs busybox-applet code paths that occasionally fail
-# with exit code 255 inside the buildkit_qemu_emulator. The non-`-S`
-# form is portable across architectures.
-RUN addgroup -g 10001 qv \
- && adduser  -D -u 10001 -G qv -h /home/qv -s /sbin/nologin qv
+# We deliberately do NOT call `adduser` here. Under buildkit's QEMU
+# emulator (cross-arch builds, e.g. linux/arm64 from an amd64 host),
+# busybox `adduser` and `addgroup` reliably exit 255 — this has been
+# tracked upstream for years without a clean fix in alpine 3.20. The
+# user does NOT need to exist in /etc/passwd for the container to run
+# as that UID; Linux `setuid(2)` accepts any numeric UID. We skip user
+# creation entirely and own the directories explicitly.
+RUN mkdir -p /home/qv /app /data \
+ && chown -R 10001:10001 /home/qv /app /data
 WORKDIR /app
 
 # Copy ONLY the runtime source. Tests, docs, and dev configs stay out of
 # the image (smaller surface, smaller image). The server is pure
 # Node-stdlib so there's no npm-install step.
-COPY --chown=qv:qv \
+COPY --chown=10001:10001 \
     server-sovereign.mjs \
     auth.mjs \
     audit.mjs \
@@ -67,17 +69,23 @@ COPY --chown=qv:qv \
     trace.mjs \
     durable.mjs \
     chain-log.mjs \
+    chain-store.mjs \
+    chain-store-postgres.mjs \
+    postgres.mjs \
     master-key.mjs \
     writer-lock.mjs \
     verify-pool.mjs \
     verify-worker.mjs \
     otlp.mjs \
+    falcon-bridge.mjs \
+    rotate-master.mjs \
+    qv-audit.mjs \
     fuzz.mjs \
     ./
 
 # Persistent data lives on a mounted volume; the container itself is
 # ephemeral. /data must be writable by uid 10001.
-RUN mkdir -p /data && chown qv:qv /data
+RUN mkdir -p /data && chown 10001:10001 /data
 VOLUME ["/data"]
 
 ENV QV_DATA_DIR=/data \
@@ -87,7 +95,7 @@ ENV QV_DATA_DIR=/data \
     NODE_OPTIONS="--enable-source-maps"
 
 EXPOSE 7433
-USER qv:qv
+USER 10001:10001
 
 # Liveness probe targets /v3/live (always 200 once the process is up).
 # Readiness should be wired separately by the orchestrator (Kubernetes
