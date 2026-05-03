@@ -1,156 +1,131 @@
-import { TkxAlert, TkxBadge, TkxCard, TkxCardBody, TkxDivider } from 'tekivex-ui';
+// SPDX-License-Identifier: Apache-2.0
+import { Link } from 'react-router-dom';
 
 export default function Architecture() {
   return (
-    <>
-      <h1>Architecture</h1>
-      <p className="lead">
-        Sigvault is organised as a small Rust core with narrow
-        embedding surfaces. The core knows how to mint, verify, and
-        mutate tokens. Everything else — HTTP, FFI, WASM, language
-        bindings — is a thin adapter that forwards bytes into that core.
-      </p>
+    <div className="page">
+      <div className="container-narrow">
+        <div className="section-eyebrow">Architecture</div>
+        <h1>One process, one wire format, every backend you already have.</h1>
+        <p className="section-lead">
+          Sigvault is a single Node.js process backed optionally by a
+          Postgres ChainStore. Every other piece — the SDKs, the FFI
+          binaries, the WASM bundle — speaks the same wire format and
+          passes the same conformance test vectors.
+        </p>
 
-      <h2>Repo layout</h2>
-      <table>
-        <thead>
-          <tr><th style={{ width: 160 }}>Crate / dir</th><th>What it contains</th></tr>
-        </thead>
-        <tbody>
-          <tr><td><code>qv-core</code></td><td>Rust library — tokens, claims, signatures, mutation chain, Falcon.</td></tr>
-          <tr><td><code>qv-ffi</code></td><td>C ABI wrapper. Builds <code>qv.dll</code> / <code>libqv.so</code> / <code>libqv.dylib</code>.</td></tr>
-          <tr><td><code>qv-wasm</code></td><td>WebAssembly wrapper. Custom getrandom shim, one host import.</td></tr>
-          <tr><td><code>qv-sdk</code></td><td>JavaScript SDK (Node stdlib only). Used by the server and Node clients.</td></tr>
-          <tr><td><code>qv-server</code></td><td>REST server — <code>server-sovereign.mjs</code>, zero npm deps.</td></tr>
-          <tr><td><code>qv-cli</code></td><td>Optional CLI front-end for operators.</td></tr>
-          <tr><td><code>qv-docs</code></td><td>This site — Vite + React + <a href="https://www.npmjs.com/package/tekivex-ui">tekivex-ui</a>.</td></tr>
-          <tr><td><code>vendor/</code></td><td>Vendored Rust source (offline-buildable supply chain).</td></tr>
-        </tbody>
-      </table>
+        <h2>Topology</h2>
+        <pre><code>{`            Frontend                Sigvault Server                 Your Backend
+            ─────────                ───────────────                 ─────────────
+            Vue / React /            issue   /v3/token/issue         Go / Java / PHP /
+            Angular / Svelte   ─►    verify  /v3/token/verify   ─►   .NET / Ruby /
+            (any framework)          rotate, identify, quota         Python / Rust / Node
 
-      <h2>Dependency elimination</h2>
-      <p>
-        Every surface has a deliberate rule about what may be pulled in.
-        When a dep sneaks in, we eliminate it rather than accept it.
-      </p>
-      <div className="qv-grid two">
-        <TkxCard variant="elevated">
-          <TkxCardBody>
-            <h3 style={{ marginTop: 0 }}>Server · <TkxBadge size="sm" colorScheme="success">0 npm</TkxBadge></h3>
-            <p className="qv-mut">
-              Only Node stdlib: <code>http</code>, <code>crypto</code>,{' '}
-              <code>fs</code>, <code>path</code>, <code>worker_threads</code>,
-              <code> os</code>, <code>zlib</code>.
-            </p>
-          </TkxCardBody>
-        </TkxCard>
-        <TkxCard variant="elevated">
-          <TkxCardBody>
-            <h3 style={{ marginTop: 0 }}>WASM · <TkxBadge size="sm" colorScheme="success">1 host import</TkxBadge></h3>
-            <p className="qv-mut">
-              <code>qv_host_random(ptr, len)</code>. No wasm-bindgen, no
-              JS glue, no npm post-install.
-            </p>
-          </TkxCardBody>
-        </TkxCard>
-        <TkxCard variant="elevated">
-          <TkxCardBody>
-            <h3 style={{ marginTop: 0 }}>FFI · <TkxBadge size="sm" colorScheme="success">plain C ABI</TkxBadge></h3>
-            <p className="qv-mut">
-              Pure functions, caller-allocated buffers, no handles. Works
-              from any language with <code>dlopen</code> / <code>LoadLibrary</code>.
-            </p>
-          </TkxCardBody>
-        </TkxCard>
-        <TkxCard variant="elevated">
-          <TkxCardBody>
-            <h3 style={{ marginTop: 0 }}>Rust · <TkxBadge size="sm" variant="outline">vendored</TkxBadge></h3>
-            <p className="qv-mut">
-              <code>cargo vendor vendor</code> pulls every crate into the
-              repo. Build with no network, no crates.io, no surprises.
-            </p>
-          </TkxCardBody>
-        </TkxCard>
+                                          │  optional
+                                          ▼
+                                   ChainStore backend
+                                   (file | postgres)`}</code></pre>
+
+        <p>
+          The frontend obtains a token by authenticating against your
+          existing IdP and asking Sigvault to issue. The token travels
+          to your backend in the <code>Authorization</code> header. The
+          backend either verifies locally with the SDK (zero round-trip)
+          or asks Sigvault to verify (centralised audit trail).
+        </p>
+
+        <h2>The request lifecycle</h2>
+        <p>
+          A single <code>/v3/token/issue</code> call traverses:
+        </p>
+        <ol>
+          <li><strong>Security headers + CORS</strong> — applied unconditionally.</li>
+          <li><strong>CIDR allowlist</strong> — denies traffic outside the configured range.</li>
+          <li><strong>Per-IP rate limit</strong> — token bucket per category (public/verify/admin/authFail).</li>
+          <li><strong>Bearer authentication</strong> — constant-time comparison against a SHA-256 hash.</li>
+          <li><strong>Per-keyId rate limit</strong> — second dimension on top of per-IP.</li>
+          <li><strong>Body + claims caps</strong> — both byte cap and structural shape cap.</li>
+          <li><strong>Writer-lock fence verification</strong> — confirms we still own this DATA_DIR.</li>
+          <li><strong>MutationChain advance</strong> — atomic increment + SHA3 ratchet.</li>
+          <li><strong>Token construction</strong> — header + AEAD-sealed claims + signature.</li>
+          <li><strong>Chain-log durable append</strong> — fsync before responding.</li>
+          <li><strong>Audit event</strong> — JSONL with W3C traceparent.</li>
+          <li><strong>Prometheus counter</strong> — bumped per outcome.</li>
+          <li><strong>Response</strong> — JSON envelope with the hex token.</li>
+        </ol>
+
+        <h2>Observability</h2>
+        <p>
+          <strong>Prometheus</strong> at <code>/v3/metrics</code> emits
+          per-route counters, latency histograms, queue depths, and
+          per-key denial counts. <strong>Audit log</strong> is JSONL, one
+          event per line, every event tagged with the W3C{' '}
+          <code>traceparent</code>. <strong>OTLP</strong> (optional) ships
+          the same audit stream via HTTP/JSON to your collector. The
+          forensic CLI <code>qv-audit</code> filters and summarises the
+          stream without jq pipelines.
+        </p>
+
+        <h2>Lifecycle</h2>
+        <p>
+          The server distinguishes liveness (is the process up?) from
+          readiness (is the keystore loaded, the writer lock acquired,
+          the chain verified?). Kubernetes probes target the right one.
+          Graceful shutdown drains in-flight requests, releases the
+          writer lock, and exits with code 0.
+        </p>
+
+        <h2>Supply-chain</h2>
+        <p>
+          <strong>Zero npm dependencies in the server.</strong> A CI gate
+          rejects any commit that ships a non-empty{' '}
+          <code>dependencies</code> field or a stale{' '}
+          <code>package-lock.json</code>. The Docker base is pinned by
+          digest as well as tag — a registry compromise that swaps a tag
+          cannot affect deployed builds. Released images are signed with
+          Sigstore cosign (keyless OIDC) and ship with a CycloneDX 1.5
+          SBOM as an OCI attestation.
+        </p>
+
+        <h2>Operating modes</h2>
+        <p>
+          <strong>Single-writer.</strong> One server per <code>DATA_DIR</code>.
+          The writer-lock fence prevents accidental dual-writers on the
+          same host or shared filesystem. Verify replicas can be added
+          for read scale.
+        </p>
+        <p>
+          <strong>Multi-writer (v4.3+).</strong> Set{' '}
+          <code>QV_CHAIN_STORE=postgres</code> and point at a Postgres
+          database. The PRIMARY KEY constraint on{' '}
+          <code>(key_id, counter)</code> enforces correctness across N
+          writers — the loser of any race surfaces as{' '}
+          <code>CHAIN_LOG_CONFLICT</code>. No coordinator process, no
+          advisory locks.
+        </p>
+
+        <h2>Where to read more</h2>
+        <ul>
+          <li>
+            <a href="https://github.com/007krcs/quantum-vault/tree/main/docs/story" target="_blank" rel="noreferrer">Storybook</a>{' '}
+            — 22 chapters, one per architectural decision, with the
+            why and the how.
+          </li>
+          <li>
+            <a href="https://github.com/007krcs/quantum-vault/tree/main/qv-spec" target="_blank" rel="noreferrer">Specification</a>{' '}
+            — OpenAPI 3.1, wire format, error code registry, conformance
+            test vectors. CC BY 4.0.
+          </li>
+          <li>
+            <Link to="/concepts">How it works</Link> — the cryptographic
+            spine in five ideas.
+          </li>
+          <li>
+            <Link to="/quickstart">Quickstart</Link> — run it on your
+            laptop in 60 seconds.
+          </li>
+        </ul>
       </div>
-
-      <h2>Token wire format</h2>
-      <p>
-        Little-endian, magic-prefixed, version-byte first. An inspector
-        can read the header without any keys.
-      </p>
-      <pre><code>{`┌───────┬────────┬─────────┬───────────┬─────────────┬──────────┬────────────┐
-│ MAGIC │ VERSION│  SUITE  │ TOKEN_TYPE│  MUT_CTR    │ CLAIMS(N)│ SIG(sigLen)│
-│  4 B  │  1 B   │   1 B   │    1 B    │    8 B      │          │            │
-│"QVLT" │  0x03  │ 0x05=…  │ 0x00=acc  │ u64 LE      │ enc blob │ variable/  │
-│       │        │         │           │             │          │ fixed      │
-└───────┴────────┴─────────┴───────────┴─────────────┴──────────┴────────────┘`}</code></pre>
-      <p>
-        Claims are encrypted with ChaCha20-Poly1305 using a key derived
-        from the server's per-key material. Payload optionally{' '}
-        <code>deflate</code>-compressed (marker byte preserves backward
-        compat).
-      </p>
-
-      <h2>Security properties</h2>
-      <table>
-        <thead>
-          <tr><th>Property</th><th>How it's enforced</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Post-quantum signatures</td><td>ML-DSA-87 (FIPS 204) default; Falcon-512/1024 opt-in.</td></tr>
-          <tr><td>Claims confidentiality</td><td>ChaCha20-Poly1305 AEAD with per-key encryption key.</td></tr>
-          <tr><td>Signing keys at rest</td><td>AES-256-GCM envelope, master key in <code>master.key</code> (mode 0600) or <code>QV_MASTER_KEY_HEX</code> env.</td></tr>
-          <tr><td>Replay protection</td><td>Append-only mutation chain per keyId, SHA3-256 hash chain, monotonic counter.</td></tr>
-          <tr><td>Revocation</td><td>Persistent <code>revoked.json</code>; all endpoints return 410 Gone for revoked keys.</td></tr>
-          <tr><td>Entropy certification</td><td>Claims payload must not compress below a floor — rejects malformed/low-entropy claims.</td></tr>
-          <tr><td>Key swap resistance</td><td>AEAD AAD binds each sealed key to its keyId (can't move a blob between slots).</td></tr>
-        </tbody>
-      </table>
-
-      <TkxDivider style={{ margin: '32px 0' }} />
-
-      <h2>Performance snapshot (v4.1)</h2>
-      <pre><code>{`ML-DSA-87   sig 4627 B   verify   1.24 ms  (1107 /s from Python FFI)
-Falcon-512  sig  656 B   verify   0.14 ms  (6990 /s from Python FFI)   ← 7.1× smaller
-Falcon-1024 sig 1266 B   verify   0.26 ms  (3808 /s from Python FFI)
-WASM  ML-DSA-87         verify   0.71 ms  (1418 /s in Node, 127 KB .wasm)
-Batch-verify 4 workers                      558 /s end-to-end (HTTP + pool)
-Batch-verify in-thread                      158 /s end-to-end`}</code></pre>
-
-      <h2>Threat model — what it protects against</h2>
-      <table>
-        <thead>
-          <tr><th>Threat</th><th>Mitigated?</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Harvest-now-decrypt-later (CRQC forgery)</td><td><TkxBadge size="sm" colorScheme="success">yes</TkxBadge> — PQ signatures</td></tr>
-          <tr><td>Stolen server disk (signing keys)</td><td><TkxBadge size="sm" colorScheme="success">yes</TkxBadge> — AES-GCM sealed, master key separable</td></tr>
-          <tr><td>Compromised npm dep shipping malware</td><td><TkxBadge size="sm" colorScheme="success">yes</TkxBadge> — server has zero npm deps</td></tr>
-          <tr><td>Token replay after use</td><td><TkxBadge size="sm" colorScheme="success">yes</TkxBadge> — mutation chain monotonic counter</td></tr>
-          <tr><td>Revoked-key reuse</td><td><TkxBadge size="sm" colorScheme="success">yes</TkxBadge> — persistent revocation list</td></tr>
-          <tr><td>Compromised application host (memory read)</td><td><TkxBadge size="sm" colorScheme="warning">partial</TkxBadge> — zeroize on drop; HSM integration roadmapped</td></tr>
-          <tr><td>TLS in transit</td><td><TkxBadge size="sm" variant="outline">out of scope</TkxBadge> — terminate at your reverse proxy</td></tr>
-        </tbody>
-      </table>
-
-      <TkxAlert variant="info" title="v4.1 roadmap — what's already in">
-        <ul style={{ margin: '6px 0' }}>
-          <li>Falcon-512 / Falcon-1024 live through qv-core, qv-ffi, and Python demos.</li>
-          <li>True multi-core batch-verify via <code>worker_threads</code> (3.5× speedup on 4 cores).</li>
-          <li>WASM unblocked via custom getrandom shim — single host import.</li>
-        </ul>
-      </TkxAlert>
-
-      <TkxAlert variant="warning" title="Pending for v4.2+">
-        <ul style={{ margin: '6px 0' }}>
-          <li>Re-vendor after Falcon crates landed (one <code>cargo vendor</code> run).</li>
-          <li>Integrate Falcon suites into <code>issue_token</code> / <code>verify_token</code> dispatch.</li>
-          <li>JS SDK Falcon adapter + <code>registerSuite</code> wiring.</li>
-          <li>Cluster-safe mutation chain (currently single-node file-backed).</li>
-          <li>HSM / DPAPI / OS-keyring integration for master key.</li>
-          <li>Falcon on wasm32 — requires pure-Rust Falcon once audited.</li>
-        </ul>
-      </TkxAlert>
-    </>
+    </div>
   );
 }

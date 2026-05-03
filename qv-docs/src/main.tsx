@@ -1,23 +1,22 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Light, dependency-minimal entry. We deliberately drop tekivex-ui in
+// favour of hand-written CSS so the docs site honours the same supply-chain
+// posture as the server. React + react-router-dom remain (the spec/asset
+// gain from server-rendered alternatives doesn't justify their footprint
+// for a static marketing site).
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ThemeProvider, quantumDark, TkxToastProvider } from 'tekivex-ui';
-// tekivex-ui's exports map declares `./styles` -> dist/style.css but the
-// file actually ships as dist/tekivex-ui.css. Until that mismatch is fixed
-// upstream, we ship a vendored copy alongside our own stylesheet.
-import './tekivex-ui.css';
 
 import App from './App';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ThemeProvider theme={quantumDark}>
-      <TkxToastProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </TkxToastProvider>
-    </ThemeProvider>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </React.StrictMode>,
 );

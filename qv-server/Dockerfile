@@ -41,8 +41,14 @@ LABEL org.opencontainers.image.vendor="007krcs"
 # ── Hardened runtime ────────────────────────────────────────────────────────
 # Run as a non-root system user for defense-in-depth. UID/GID pinned so
 # volume permissions don't drift across image rebuilds.
-RUN addgroup -S -g 10001 qv \
- && adduser  -S -u 10001 -G qv -h /home/qv qv
+#
+# We deliberately avoid Alpine's `-S` (system-user) flag here. Under
+# QEMU emulation for cross-arch builds (linux/arm64 from an amd64 host),
+# `adduser -S` runs busybox-applet code paths that occasionally fail
+# with exit code 255 inside the buildkit_qemu_emulator. The non-`-S`
+# form is portable across architectures.
+RUN addgroup -g 10001 qv \
+ && adduser  -D -u 10001 -G qv -h /home/qv -s /sbin/nologin qv
 WORKDIR /app
 
 # Copy ONLY the runtime source. Tests, docs, and dev configs stay out of
