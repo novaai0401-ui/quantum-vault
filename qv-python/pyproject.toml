@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "sigvault"
-version         = "4.3.2"
+version         = "4.3.3"
 description     = "Post-quantum (ML-DSA-87 / Falcon) cryptographic tokens — Python client for the Sigvault REST server."
 readme          = "README.md"
 license         = { text = "Apache-2.0" }

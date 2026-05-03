@@ -1,6 +1,6 @@
 [package]
 name        = "qv-core"
-version     = "4.3.2"
+version     = "4.3.3"
 edition     = "2021"
 rust-version = "1.75"
 description = "Sigvault — post-quantum cryptographic tokens (ML-DSA-87 + Falcon-512/1024, XChaCha20-Poly1305, SHA3-256, mutation-chain replay protection)."

@@ -388,7 +388,14 @@ jobs:
           context: qv-server
           file: qv-server/Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          # linux/arm64 cross-build under buildkit's QEMU emulator on
+          # amd64 hosts has been hitting exit 255 on basic `mkdir` /
+          # `chown` / `adduser` invocations regardless of the actual
+          # command — see runs 25272284198 / 25273594937 / 25275720759.
+          # Single-arch amd64 sidesteps QEMU entirely. ARM users build
+          # locally with `docker buildx --platform linux/arm64`. We'll
+          # restore multi-arch when buildkit/QEMU stabilises.
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
