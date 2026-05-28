@@ -1,6 +1,6 @@
 {
   "name": "@sigvault/wasm",
-  "version": "4.3.8",
+  "version": "4.3.9",
   "description": "Sigvault WebAssembly build — ML-DSA-87 post-quantum tokens in ~127 KB of wasm. Runs in browsers, Node, Deno, Bun, Cloudflare Workers.",
   "type": "module",
   "main": "./index.mjs",

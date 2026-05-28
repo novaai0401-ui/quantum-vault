@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "qv-core"
-version = "4.3.8"
+version = "4.3.9"
 dependencies = [
  "chacha20poly1305",
  "hex",
