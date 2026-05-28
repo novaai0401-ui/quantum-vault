@@ -3,11 +3,13 @@
   "version": "4.3.3",
   "description": "Sigvault post-quantum token SDK — ML-DSA-87 (Dilithium-5) + XChaCha20-Poly1305 + SHA3-256. Works in Node, Deno, Bun, Cloudflare Workers, and modern browsers.",
   "type": "module",
-  "main": "./src/index.mjs",
+  "main":   "./src/index.mjs",
   "module": "./src/index.mjs",
+  "types":  "./src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./src/index.mjs",
+      "types":   "./src/index.d.ts",
+      "import":  "./src/index.mjs",
       "default": "./src/index.mjs"
     }
   },
@@ -49,9 +51,9 @@
     "test": "node demo.mjs"
   },
   "dependencies": {
-    "@noble/ciphers": "^2.2.0",
-    "@noble/hashes": "^2.2.0",
-    "@noble/post-quantum": "^0.6.1"
+    "@noble/ciphers":       "^2.2.0",
+    "@noble/hashes":        "^2.2.0",
+    "@noble/post-quantum":  "^0.6.1"
   },
   "publishConfig": {
     "access": "public",

@@ -56,14 +56,77 @@ console.log(result.claims); // { sub: 'user-123', role: 'admin' }
 
 - `generateKeypair()` / `MutationChain`
 - `issueToken({ ... })` / `verifyToken({ ... })` / `inspectToken(...)`
-- Wire-format compatible with the Rust `qv-core` and REST server.
+- `issueTokenAt({ chainSeed, counter, ... })` — stateless issue for serverless
+- `encrypt(plaintext, key, nonce, aad?)` / `decrypt(...)` — XChaCha20-Poly1305 primitive
+- `randomBytes(n)` — re-exported from `@noble/hashes` so you don't need to install it
+- TypeScript declarations (`index.d.ts`) — TS consumers get full types out of the box
+- Wire-format compatible with the Rust `qv-core` and the REST server
+
+### Serverless mode
+
+In AWS Lambda / Cloudflare Workers / Vercel Functions the function instance
+disappears between invocations. A `new MutationChain()` therefore starts at
+counter=0 every cold start and **replay protection silently breaks**.
+
+Use `issueTokenAt` and hold the counter in an external atomic store:
+
+```js
+import { issueTokenAt } from '@sigvault/sdk';
+
+// Pseudocode — replace with your atomic-increment store
+const next = await redis.incr(`sigvault:ctr:${keyId}`);
+
+const { tokenHex } = issueTokenAt({
+  signingKeySeed: signingKey,
+  encryptKey,
+  chainSeed: encryptKey.slice(0, 32),  // the deterministic seed used server-side
+  counter: BigInt(next),
+  claims: { sub: 'alice' },
+});
+```
+
+Verify side: hold `last_seen_ctr_per_keyId` in the same store and reject tokens
+whose counter is `<=` the stored value.
+
+### Falcon-512 / Falcon-1024 — current status
+
+The SDK signs **ML-DSA-87 only** today. The wire format reserves suite bytes
+`0x10` (Falcon-512) and `0x11` (Falcon-1024) but the SDK has no Falcon
+implementation because there is no audited zero-dep JS Falcon yet — PQClean's
+reference code is float-heavy NTT C that resists pure-JS porting, and
+`@noble/post-quantum` does not include Falcon.
+
+For Falcon today:
+
+- Run the Sigvault server with `qv-cli` available; the server exposes
+  `POST /v3/admin/falcon/sign` and `POST /v3/falcon/verify` over HTTP. The
+  bridge spawns `qv-cli` (Rust + PQClean) per call.
+- Or call `qv-core` directly from Rust.
+
+Falcon in the JS SDK is tracked as limitation **L9**; it's a v4.4 candidate
+once a viable Falcon path (WASM with C-toolchain build, or an audited JS impl)
+emerges.
+
+### Runtime compatibility
+
+| Runtime          | Issue / verify | Compression           |
+|------------------|----------------|-----------------------|
+| Node 18+         | ✅              | `node:zlib` (sync)    |
+| Bun              | ✅              | `node:zlib` (sync)    |
+| Deno             | ✅              | Pass `compress: false`|
+| Cloudflare Workers | ✅            | Pass `compress: false`|
+| Modern browser   | ✅              | Pass `compress: false`|
+
+The SDK auto-detects: on a runtime without sync compression, `compress: 'auto'`
+silently downgrades to `false`. Pass `compress: true` to force compression
+and you'll get `COMPRESSION_UNAVAILABLE` if the runtime can't honour it.
 
 ## Server-side verification
 
 Pair this SDK with the zero-dependency REST server for a stateful backend:
 
 ```bash
-docker run -p 7433:7433 ghcr.io/007krcs/qv-server:4.2
+docker run -p 7433:7433 ghcr.io/007krcs/qv-server:4.3
 ```
 
 …or run `cargo add qv-core --features falcon` if your backend is Rust.

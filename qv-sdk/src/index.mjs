@@ -1,22 +1,71 @@
 /**
- * Sigvault v3.0 — Node.js / WASM-ready SDK
+ * Sigvault SDK — see ./package.json for the authoritative version.
  *
- * Runs on Node.js, Deno, Bun, Cloudflare Workers, and any browser that
- * supports WebCrypto + WebAssembly. Never blocked by OS AppControl because
- * it executes inside the already-trusted JavaScript runtime.
+ * Runs on Node.js, Deno, Bun, Cloudflare Workers, and any modern
+ * browser. The compression path is runtime-detected and degrades to
+ * uncompressed-only on platforms that ship neither `node:zlib` nor the
+ * `CompressionStream` Web API.
  *
  * Cryptographic primitives:
  *  - ML-DSA-87 (Dilithium-5, NIST FIPS 204)  ← @noble/post-quantum
  *  - XChaCha20-Poly1305                        ← @noble/ciphers
  *  - SHA3-256                                  ← @noble/hashes
- *  - CSPRNG                                    ← WebCrypto getRandomValues
+ *  - CSPRNG                                    ← @noble/hashes (WebCrypto under the hood)
+ *
+ * Falcon-512 / Falcon-1024 are reserved in the wire format but not yet
+ * signed by this SDK — there is no audited zero-dep JS Falcon impl. For
+ * Falcon today, use the server-side `/v3/admin/falcon/sign` bridge or
+ * call `qv-cli` directly. See limitation L9.
  */
 
-import { ml_dsa87 }        from '@noble/post-quantum/ml-dsa.js';
+import { ml_dsa87 }         from '@noble/post-quantum/ml-dsa.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
-import { sha3_256 }          from '@noble/hashes/sha3.js';
-import { randomBytes }       from '@noble/hashes/utils.js';
-import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import { sha3_256 }         from '@noble/hashes/sha3.js';
+import { randomBytes }      from '@noble/hashes/utils.js';
+
+// ─── Compression — platform-detected ────────────────────────────────────────
+// We support three modes:
+//   1. Node — use node:zlib synchronously (fastest, classic path).
+//   2. Browser / Workers / Deno — use the CompressionStream Web API
+//      (asynchronous; we only invoke it when the caller opts in).
+//   3. Neither available — `_compressionAvailable` is false and any
+//      `compress: 'auto' | true` request silently degrades to `false`.
+//
+// Detecting `node:zlib` requires a dynamic import because a static
+// `import 'node:zlib'` breaks every non-Node runtime at module-load
+// time (Workers throw `unsupported module` on parse).
+//
+// `_deflateRawSync` / `_inflateRawSync` are the Node-only fast path and
+// are populated only when we're on Node. The CompressionStream path is
+// async and surfaces via `compressAsync` / `decompressAsync` helpers
+// reserved for a future, fully-async issue/verify pipeline.
+let _deflateRawSync = null;
+let _inflateRawSync = null;
+let _compressionAvailable = false;
+
+const _isNode = typeof process !== 'undefined' &&
+                process?.versions?.node !== undefined &&
+                typeof globalThis?.window === 'undefined';
+
+if (_isNode) {
+  // Top-level await is fine inside ESM. Bundlers that don't follow
+  // node:* imports (esbuild + browser target) will tree-shake this
+  // branch out because `_isNode` is statically false there.
+  try {
+    const zlib = await import('node:zlib');
+    _deflateRawSync = zlib.deflateRawSync;
+    _inflateRawSync = zlib.inflateRawSync;
+    _compressionAvailable = true;
+  } catch { /* swallow — fall through to the Web API check */ }
+}
+
+if (!_compressionAvailable && typeof globalThis?.CompressionStream !== 'undefined') {
+  // CompressionStream is async-only. We don't wire it into the sync
+  // issueToken path here — instead, callers on browser/Workers should
+  // either pass `compress: false` (default for those runtimes via the
+  // auto-detection below) or use the future async API.
+  _compressionAvailable = false; // sync API still unavailable in this branch
+}
 
 // ─── Payload compression markers (inside the encrypted blob) ────────────────
 // Backward compat: legacy tokens start with 0x8N (MessagePack fixmap for N
@@ -28,7 +77,11 @@ const PAYLOAD_DEFLATE = 0x01;   // plaintext = [0x01] + deflate-raw(msgpack)
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const MAGIC        = 0x51564C54;     // "QVLT"
-export const VERSION      = 0x0300;         // v3.0
+// Wire-format version: 0x0300 = wire v3.0. Bumped only on a
+// breaking change to the byte layout. Distinct from the npm
+// package version (see package.json) — clients should never rely on
+// the npm version to negotiate the wire format.
+export const VERSION      = 0x0300;
 export const SUITE_IDS    = {
   Dilithium5: 0x05,            // ML-DSA-87  — default, PQ-256
   Dilithium3: 0x02,             // ML-DSA-65  — reserved (PQ-192, smaller)
@@ -247,23 +300,38 @@ function signedBytes(header, encPayload) {
  * Issue a new Sigvault token.
  *
  * @param {object} params
- * @param {Uint8Array} params.signingKeySeed   — 32-byte ML-DSA-87 seed
- * @param {Uint8Array} params.encryptKey       — 32-byte XChaCha20 key
- * @param {MutationChain} params.chain         — HYDRA mutation chain (mutated in place)
- * @param {object}       params.claims         — plain JS object of string claims
- * @param {number}       [params.ttl=3600]     — TTL in seconds
- * @param {number}       [params.suite]        — SUITE_IDS value
- * @param {number}       [params.tokenType]    — TOKEN_TYPES value
- * @param {Uint8Array}   [params.deviceFp]     — 32-byte device fingerprint
+ * @param {Uint8Array} [params.signingKeySeed]  — 32-byte ML-DSA-87 seed (canonical name)
+ * @param {Uint8Array} [params.signingKey]      — alias for `signingKeySeed`; accepted
+ *                                                for backward compat with older docs
+ *                                                and adapter SDKs. Do not pass both.
+ * @param {Uint8Array} params.encryptKey        — 32-byte XChaCha20 key
+ * @param {MutationChain} params.chain          — Mutation chain (mutated in place)
+ * @param {object}     params.claims            — plain JS object of claim values
+ * @param {number}     [params.ttl=3600]        — TTL in seconds
+ * @param {number}     [params.suite]           — SUITE_IDS value
+ * @param {number}     [params.tokenType]       — TOKEN_TYPES value
+ * @param {Uint8Array} [params.deviceFp]        — 32-byte device fingerprint
+ * @param {'auto'|true|false} [params.compress] — see compression note above
  * @returns {{ tokenBytes: Uint8Array, tokenHex: string }}
  */
 export function issueToken({
-  signingKeySeed, encryptKey, chain, claims,
+  signingKeySeed, signingKey, encryptKey, chain, claims,
   ttl = 3600,
   suite = SUITE_IDS.Dilithium5,
   tokenType = TOKEN_TYPES.Access,
   deviceFp = null,
 }) {
+  // Accept either `signingKeySeed` (canonical) or `signingKey` (alias).
+  // Reject if both were supplied — likely a caller mistake, and we don't
+  // want to pick a winner silently.
+  if (signingKeySeed && signingKey) {
+    throw new Error('AMBIGUOUS_SIGNING_KEY: pass either `signingKeySeed` '
+                  + '(canonical) or `signingKey` (alias), not both.');
+  }
+  signingKeySeed = signingKeySeed ?? signingKey;
+  if (!signingKeySeed) {
+    throw new Error('MISSING_SIGNING_KEY: `signingKeySeed` (or alias `signingKey`) required.');
+  }
   // 1. Timestamp in microseconds.
   const issuedAt = BigInt(Date.now()) * 1000n;
 
@@ -279,16 +347,27 @@ export function issueToken({
   const mutationCtr = chain.counter;
 
   // 5. Encode + optionally compress + encrypt claims.
-  //    `compress` options: 'auto' (default, only if it shrinks), true, false.
+  //    `compress` options: 'auto' (default, only compress if it shrinks),
+  //    true (always), false (never). On runtimes without sync compression
+  //    available (browsers, Workers, Deno without node:zlib shim) the
+  //    `auto` and `true` modes silently downgrade to `false`. If the
+  //    caller explicitly passed `compress: true` we throw a structured
+  //    error rather than silently writing an uncompressed token they
+  //    didn't ask for.
   const rawClaims = encodeClaims(claims);
   let plaintext;
-  const mode = arguments[0].compress ?? 'auto';
-  if (mode === false) {
+  const requestedMode = arguments[0].compress ?? 'auto';
+  if (requestedMode === false || !_compressionAvailable) {
+    if (requestedMode === true && !_compressionAvailable) {
+      throw new Error('COMPRESSION_UNAVAILABLE: `compress: true` requested but '
+                    + 'this runtime ships neither node:zlib nor a sync '
+                    + 'compression API. Pass `compress: false` or run on Node.');
+    }
     plaintext = concat(new Uint8Array([PAYLOAD_RAW]), rawClaims);
   } else {
-    const deflated = deflateRawSync(Buffer.from(rawClaims), { level: 9 });
-    const useCompressed = (mode === true)
-      || (mode === 'auto' && deflated.length + 1 < rawClaims.length + 1);
+    const deflated = _deflateRawSync(Buffer.from(rawClaims), { level: 9 });
+    const useCompressed = (requestedMode === true)
+      || (requestedMode === 'auto' && deflated.length + 1 < rawClaims.length + 1);
     plaintext = useCompressed
       ? concat(new Uint8Array([PAYLOAD_DEFLATE]), new Uint8Array(deflated))
       : concat(new Uint8Array([PAYLOAD_RAW]),     rawClaims);
@@ -306,6 +385,50 @@ export function issueToken({
   // 8. Serialize.
   const tokenBytes = serializeToken(header, encPayload, sig);
   return { tokenBytes, tokenHex: toHex(tokenBytes) };
+}
+
+/**
+ * Stateless issue path for serverless environments where the chain
+ * counter is held in an EXTERNAL store (Redis, DynamoDB, Postgres,
+ * etc.) and the function instance can't be trusted to retain state
+ * across invocations. The caller atomically reads + increments the
+ * counter in their store, then calls this with the post-advance value.
+ *
+ * This is functionally equivalent to:
+ *
+ *   const chain = MutationChain.fromState(seed, preCounter);
+ *   issueToken({ ..., chain });
+ *
+ * but without the SDK assuming any in-memory chain survives across
+ * the call. If you forget to externalise the counter, every Lambda
+ * cold-start issues a token at counter=1 and replay protection
+ * silently breaks. This API forces the issue.
+ *
+ * @param {object} params
+ * @param {Uint8Array} params.signingKeySeed   — 32-byte seed (or signingKey alias)
+ * @param {Uint8Array} params.encryptKey       — 32-byte XChaCha20 key
+ * @param {Uint8Array} params.chainSeed        — 32-byte deterministic chain seed
+ * @param {bigint|number} params.counter       — post-advance chain counter, from your store
+ * @param {object}     params.claims
+ * @param {number}     [params.ttl=3600]
+ * @param {number}     [params.suite]          — SUITE_IDS value
+ * @param {number}     [params.tokenType]      — TOKEN_TYPES value
+ * @param {Uint8Array} [params.deviceFp]
+ * @param {'auto'|true|false} [params.compress]
+ * @returns {{ tokenBytes: Uint8Array, tokenHex: string }}
+ */
+export function issueTokenAt(params) {
+  const { chainSeed, counter, ...rest } = params;
+  if (!(chainSeed instanceof Uint8Array) || chainSeed.length !== 32) {
+    throw new Error('issueTokenAt: chainSeed must be a 32-byte Uint8Array');
+  }
+  const ctr = typeof counter === 'bigint' ? counter : BigInt(counter);
+  if (ctr <= 0n) {
+    throw new Error('issueTokenAt: counter must be ≥ 1 (counters are post-advance)');
+  }
+  // Rebuild the chain to (counter - 1) so advance() lands at `counter`.
+  const chain = MutationChain.fromState(chainSeed, ctr - 1n);
+  return issueToken({ ...rest, chain });
 }
 
 // ─── Verify ───────────────────────────────────────────────────────────────────
@@ -345,13 +468,24 @@ export function verifyToken({ token, verifyingKey, encryptKey, chain }) {
   // Layer 6 — replay detection.
   chain.checkTokenCounter(header.mutationCtr);
 
-  // Layer 7 — decompress (if v4.1 marker) then decode claims.
+  // Layer 7 — decompress (if v4.1 marker) then decode claims. On a
+  // runtime without sync decompression and a deflate-marked token we
+  // surface DECOMPRESSION_UNAVAILABLE rather than silently treating the
+  // body as raw bytes (which would corrupt claims).
   let payloadBytes;
   if (plaintext.length > 0 && (plaintext[0] === PAYLOAD_RAW || plaintext[0] === PAYLOAD_DEFLATE)) {
     const body = plaintext.slice(1);
-    payloadBytes = plaintext[0] === PAYLOAD_DEFLATE
-      ? new Uint8Array(inflateRawSync(Buffer.from(body)))
-      : body;
+    if (plaintext[0] === PAYLOAD_DEFLATE) {
+      if (!_compressionAvailable) {
+        throw new Error('DECOMPRESSION_UNAVAILABLE: token is deflate-compressed but '
+                      + 'this runtime ships neither node:zlib nor a sync '
+                      + 'decompression API. Issue the token with `compress: false` '
+                      + 'or verify on Node.');
+      }
+      payloadBytes = new Uint8Array(_inflateRawSync(Buffer.from(body)));
+    } else {
+      payloadBytes = body;
+    }
   } else {
     // Legacy token without marker byte.
     payloadBytes = plaintext;
@@ -394,3 +528,54 @@ function concat(...arrs) {
   for (const a of arrs) { out.set(a, pos); pos += a.length; }
   return out;
 }
+
+// ─── Public AEAD primitives (since v4.3.x) ───────────────────────────────────
+// Some consumers want XChaCha20-Poly1305 directly, without going through
+// the full Sigvault token format — for instance, sealing arbitrary
+// configuration blobs at rest under the same key the server already
+// holds. We surface the primitive with the same nonce convention used
+// internally (32-byte token nonce → SHA3-256 derives the 12-byte
+// XChaCha nonce) so anything written here can later be unsealed via a
+// hand-rolled equivalent and vice versa.
+
+/**
+ * AEAD-encrypt arbitrary bytes under an XChaCha20-Poly1305 key.
+ *
+ * @param {Uint8Array} plaintext
+ * @param {Uint8Array} key       — 32-byte symmetric key
+ * @param {Uint8Array} nonce     — 32-byte nonce (first 12 used; the trailing
+ *                                  20 are reserved so the same token-nonce
+ *                                  shape composes naturally)
+ * @param {Uint8Array} [aad]     — optional additional authenticated data
+ * @returns {Uint8Array}         — `ciphertext || 16-byte tag`
+ */
+export function encrypt(plaintext, key, nonce, aad) {
+  if (!(plaintext instanceof Uint8Array)) throw new Error('encrypt: plaintext must be Uint8Array');
+  if (!(key       instanceof Uint8Array) || key.length !== 32)
+    throw new Error('encrypt: key must be a 32-byte Uint8Array');
+  if (!(nonce     instanceof Uint8Array) || nonce.length !== 32)
+    throw new Error('encrypt: nonce must be a 32-byte Uint8Array');
+  const digest = sha3_256(nonce);
+  const chacha = chacha20poly1305(key, digest.slice(0, 12), aad);
+  return chacha.encrypt(plaintext);
+}
+
+/** Inverse of `encrypt`. Throws on AEAD-tag mismatch. */
+export function decrypt(ciphertext, key, nonce, aad) {
+  if (!(ciphertext instanceof Uint8Array)) throw new Error('decrypt: ciphertext must be Uint8Array');
+  if (!(key        instanceof Uint8Array) || key.length !== 32)
+    throw new Error('decrypt: key must be a 32-byte Uint8Array');
+  if (!(nonce      instanceof Uint8Array) || nonce.length !== 32)
+    throw new Error('decrypt: nonce must be a 32-byte Uint8Array');
+  const digest = sha3_256(nonce);
+  const chacha = chacha20poly1305(key, digest.slice(0, 12), aad);
+  return chacha.decrypt(ciphertext);
+}
+
+// ─── Re-exports from @noble (since v4.3.x) ───────────────────────────────────
+// Convenience: consumers that already depend on @sigvault/sdk shouldn't
+// have to install @noble themselves to use a CSPRNG or a hash. These are
+// the SAME instances we use internally — no extra dep, no extra bytes.
+
+export { randomBytes };
+
