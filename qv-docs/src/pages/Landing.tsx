@@ -32,13 +32,16 @@ export default function Landing() {
           </p>
 
           <div className="cta-row">
-            <Link to="/quickstart" className="btn btn-primary">
-              Get started in 60 seconds →
+            <Link to="/demo" className="btn btn-primary">
+              Try it in your browser →
+            </Link>
+            <Link to="/quickstart" className="btn btn-ghost">
+              Quickstart (60 seconds)
             </Link>
             <a className="btn btn-ghost"
-               href="https://github.com/007krcs/quantum-vault"
+               href="https://github.com/novaai0401-ui/quantum-vault"
                target="_blank" rel="noreferrer">
-              Read the source on GitHub
+              Source on GitHub
             </a>
           </div>
 
@@ -293,12 +296,8 @@ export default function Landing() {
             it to a real cluster when you're ready.
           </p>
           <div className="cta-row" style={{ justifyContent: 'center', marginTop: 28 }}>
-            <Link to="/quickstart" className="btn btn-primary">Open the quickstart</Link>
-            <a className="btn btn-ghost"
-               href="https://github.com/007krcs/quantum-vault/tree/main/docs/story"
-               target="_blank" rel="noreferrer">
-              Read the storybook
-            </a>
+            <Link to="/demo" className="btn btn-primary">Try the live demo</Link>
+            <Link to="/storybook" className="btn btn-ghost">Read the storybook</Link>
           </div>
         </div>
       </section>

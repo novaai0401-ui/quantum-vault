@@ -6,20 +6,22 @@
   "description": "Sigvault marketing + documentation site (Vite + React, hand-written CSS).",
   "license": "Apache-2.0",
   "scripts": {
-    "dev":     "vite",
-    "build":   "vite build",
+    "dev": "vite",
+    "build": "vite build",
     "preview": "vite preview --host --port 4173"
   },
   "dependencies": {
-    "react":            "^18.3.1",
-    "react-dom":        "^18.3.1",
+    "@sigvault/sdk": "^4.3.7",
+    "marked": "^18.0.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
-    "@types/react":         "^18.3.12",
-    "@types/react-dom":     "^18.3.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
-    "typescript":           "^5.6.3",
-    "vite":                 "^5.4.10"
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
   }
 }

@@ -8,7 +8,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    target: 'es2020',
+    // ES2022 unlocks top-level await, which the @sigvault/sdk needs for
+    // its runtime-detected `await import('node:zlib')` graceful fallback.
+    // All evergreen browsers (Chrome 89+, Firefox 89+, Safari 15+) support it.
+    target: 'es2022',
   },
   server: { port: 5173 },
 });
