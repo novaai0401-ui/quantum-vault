@@ -121,6 +121,16 @@ jobs:
           cp LICENSE qv-wasm/pkg/LICENSE
           ls -lh qv-wasm/pkg/
 
+      # ── Loader smoke test ────────────────────────────────────────────
+      # Run the freshly-built wasm through every loader entry point
+      # BEFORE we publish. Catches the class of bugs that shipped in
+      # v4.3.8 (WebAssembly.instantiate destructure error + ESM require
+      # error) — both would have been a one-line failure here. Smoke
+      # script lives at qv-wasm/smoke.mjs; fails non-zero on any
+      # loader path breakage.
+      - name: Loader smoke test (loadQV + loadQVFromModule + host random)
+        run: node qv-wasm/smoke.mjs
+
       - name: Verify version matches tag
         if: github.event_name == 'push'
         working-directory: qv-wasm/pkg
