@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { TkxBadge } from 'tekivex-ui';
 
 import { chapterBySlug, chapters } from '../storybook/chapters';
 import { renderMarkdown, extractH2 } from '../storybook/md';
@@ -49,9 +50,9 @@ export default function Chapter() {
         </aside>
 
         <article className="chapter-body">
-          <div className="chapter-eyebrow">
+          <TkxBadge variant="subtle" colorScheme="primary" size="sm" style={{ marginBottom: 10 }}>
             Chapter {String(chapter.num).padStart(2, '0')} · Storybook
-          </div>
+          </TkxBadge>
           <h1>{chapter.title}</h1>
           <div
             className="prose-block"

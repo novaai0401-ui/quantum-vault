@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Light, dependency-minimal entry. We deliberately drop tekivex-ui in
-// favour of hand-written CSS so the docs site honours the same supply-chain
-// posture as the server. React + react-router-dom remain (the spec/asset
-// gain from server-rendered alternatives doesn't justify their footprint
-// for a static marketing site).
+// tekivex-ui v3 wires the ThemeProvider + Toast provider + global
+// stylesheet. We use the `auroraLight` theme — warm light palette,
+// no dark backgrounds anywhere — to match the Sigvault brand voice.
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+
+import { ThemeProvider, TkxToastProvider, auroraLight } from 'tekivex-ui';
+import 'tekivex-ui/styles';
 
 import App from './App';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ThemeProvider theme={auroraLight}>
+      <TkxToastProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </TkxToastProvider>
+    </ThemeProvider>
   </React.StrictMode>,
 );

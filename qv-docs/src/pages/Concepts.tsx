@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Link } from 'react-router-dom';
+import { TkxAlert, TkxButton } from 'tekivex-ui';
 
 export default function Concepts() {
   return (
@@ -11,6 +12,12 @@ export default function Concepts() {
           Five ideas, in order. Read them once and the rest of the
           architecture follows from them.
         </p>
+
+        <TkxAlert variant="info" title="Prefer to learn by doing?" style={{ marginTop: 20 }}>
+          The <Link to="/demo">interactive demo</Link> runs every concept on
+          this page against a real token in your browser. Read or click —
+          either path tells the same story.
+        </TkxAlert>
 
         <h2>The key triplet</h2>
         <p>
@@ -113,12 +120,18 @@ ctr_n      = ctr_{n-1} + 1`}</code></pre>
           <li><strong>Supply-chain compromise</strong> — zero npm runtime deps in the server.</li>
         </ul>
 
-        <p style={{ marginTop: 36 }}>
-          Continue with <Link to="/architecture">Architecture</Link> for
-          how the request flows through the server end-to-end, or jump
-          to the full <a href="https://github.com/007krcs/quantum-vault/tree/main/docs/story" target="_blank" rel="noreferrer">storybook</a> for
-          the chapter-by-chapter rationale.
-        </p>
+        <div className="cta-row" style={{ marginTop: 40 }}>
+          <Link to="/architecture">
+            <TkxButton variant="solid" colorScheme="primary">
+              Architecture next →
+            </TkxButton>
+          </Link>
+          <Link to="/storybook">
+            <TkxButton variant="outline" colorScheme="neutral">
+              All 22 chapters
+            </TkxButton>
+          </Link>
+        </div>
       </div>
     </div>
   );

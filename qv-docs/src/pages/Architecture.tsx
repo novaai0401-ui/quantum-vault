@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Link } from 'react-router-dom';
+import { TkxAlert, TkxButton } from 'tekivex-ui';
 
 export default function Architecture() {
   return (
@@ -107,12 +108,11 @@ export default function Architecture() {
         <h2>Where to read more</h2>
         <ul>
           <li>
-            <a href="https://github.com/007krcs/quantum-vault/tree/main/docs/story" target="_blank" rel="noreferrer">Storybook</a>{' '}
-            — 22 chapters, one per architectural decision, with the
-            why and the how.
+            <Link to="/storybook">Storybook</Link> — 22 chapters, one per
+            architectural decision, rendered right here in the site.
           </li>
           <li>
-            <a href="https://github.com/007krcs/quantum-vault/tree/main/qv-spec" target="_blank" rel="noreferrer">Specification</a>{' '}
+            <a href="https://github.com/novaai0401-ui/quantum-vault/tree/main/qv-spec" target="_blank" rel="noreferrer">Specification</a>{' '}
             — OpenAPI 3.1, wire format, error code registry, conformance
             test vectors. CC BY 4.0.
           </li>
@@ -125,6 +125,27 @@ export default function Architecture() {
             laptop in 60 seconds.
           </li>
         </ul>
+
+        <TkxAlert variant="success" title="Verify the supply chain"
+                  style={{ marginTop: 36 }}>
+          The container image is cosign-signed against a GitHub Actions
+          OIDC identity and ships with a CycloneDX 1.5 SBOM as an OCI
+          attestation. Run <code>cosign verify ghcr.io/novaai0401-ui/qv-server:4.3.7</code>{' '}
+          before deploy.
+        </TkxAlert>
+
+        <div className="cta-row" style={{ marginTop: 32 }}>
+          <Link to="/demo">
+            <TkxButton variant="solid" colorScheme="primary">
+              See it run in your browser
+            </TkxButton>
+          </Link>
+          <Link to="/quickstart">
+            <TkxButton variant="outline" colorScheme="neutral">
+              Quickstart recipes
+            </TkxButton>
+          </Link>
+        </div>
       </div>
     </div>
   );
