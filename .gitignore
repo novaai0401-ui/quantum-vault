@@ -65,3 +65,7 @@ venv
 !vendor/**/__pycache__/
 !vendor/**/__pycache__/**
 .claude/
+
+# npm auth files — never commit
+.npmrc
+**/.npmrc
