@@ -1,6 +1,6 @@
 {
   "name": "@sigvault/sdk",
-  "version": "4.3.7",
+  "version": "4.3.8",
   "description": "Sigvault post-quantum token SDK — ML-DSA-87 (Dilithium-5) + XChaCha20-Poly1305 + SHA3-256. Works in Node, Deno, Bun, Cloudflare Workers, and modern browsers.",
   "type": "module",
   "main": "./src/index.mjs",

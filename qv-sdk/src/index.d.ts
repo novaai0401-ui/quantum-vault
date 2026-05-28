@@ -57,13 +57,18 @@ export type Claims = Record<string, unknown>;
  *    state hash. Called by `issueToken`.
  *  - `checkTokenCounter(ctr)` throws `REPLAY` if `ctr <= this.counter`.
  *  - `fromState(state, counter)` reconstructs a chain at a known position,
- *    for instance after the server restarts or when running in a serverless
- *    environment where the counter is held in an external store
- *    (Redis, DynamoDB, Postgres).
+ *    for instance after the server restarts.
+ *
+ * For SERVERLESS deployments — where the in-memory chain disappears between
+ * invocations — use {@link ChainStore} + {@link issueTokenWithStore} +
+ * {@link verifyTokenWithStore} instead of touching MutationChain directly.
+ * Those wrappers reserve the counter from an external store (Redis,
+ * Postgres, DynamoDB, Cloudflare Durable Object) atomically; see the
+ * README "Serverless cookbook" for ready-made recipes.
  *
  * Hash function: SHA3-256(prev_state || prev_counter as big-endian u64).
- * Single-writer by design; for horizontal scaling use the
- * server-side Postgres ChainStore (see docs/story/19).
+ * Single-writer by design; for horizontal scaling use the server-side
+ * Postgres ChainStore (see qv-server/chain-store-postgres.mjs).
  */
 export class MutationChain {
   /**
@@ -271,6 +276,83 @@ export function decrypt(
   nonce:      Uint8Array,
   aad?:       Uint8Array,
 ): Uint8Array;
+
+// ─── ChainStore (since v4.3.8) ──────────────────────────────────────────
+
+/**
+ * Pluggable mutation-counter store for serverless / multi-instance
+ * deployments. Implementations back this with Redis INCR, Postgres
+ * SELECT…FOR UPDATE, DynamoDB UpdateItem, Cloudflare Durable Objects,
+ * etc. See README "Serverless cookbook" for ready-made recipes.
+ */
+export interface ChainStore {
+  /**
+   * Atomically reserve the next counter for `keyId`. The store MUST
+   * commit the new value to durable storage before this resolves.
+   * Subsequent callers (concurrent or sequential) must never receive
+   * the same value.
+   */
+  reserveNext(keyId: string): Promise<bigint>;
+
+  /**
+   * Update the verifier-side high-water mark for `keyId` to `counter`.
+   * Throws `Error('REPLAY: ...')` if `counter` is not strictly greater
+   * than the stored value. Called once per successful token verify.
+   */
+  observe(keyId: string, counter: bigint | number): Promise<void>;
+}
+
+/**
+ * Reference single-process in-memory ChainStore. Counters are lost on
+ * restart — use this for tests, local dev, and as a template when you
+ * implement a production backing store.
+ */
+export class InMemoryChainStore implements ChainStore {
+  reserveNext(keyId: string): Promise<bigint>;
+  observe(keyId: string, counter: bigint | number): Promise<void>;
+  /** Read-only snapshot of the current high-water mark. */
+  current(keyId: string): bigint;
+}
+
+/** Parameters for `issueTokenWithStore`. */
+export interface IssueTokenWithStoreParams extends Omit<IssueTokenAtParams, 'counter'> {
+  store: ChainStore;
+  keyId: string;
+}
+
+/** Result of `issueTokenWithStore` — includes the counter that was reserved. */
+export interface IssueTokenWithStoreResult extends IssueTokenResult {
+  counter: bigint;
+}
+
+/**
+ * Canonical serverless issuance path. Reserves the next counter from
+ * the supplied ChainStore (atomic, durable) and then signs against it.
+ */
+export function issueTokenWithStore(
+  params: IssueTokenWithStoreParams,
+): Promise<IssueTokenWithStoreResult>;
+
+/** Parameters for `verifyTokenWithStore`. */
+export interface VerifyTokenWithStoreParams {
+  store:        ChainStore;
+  keyId:        string;
+  token:        Uint8Array | string;
+  verifyingKey: Uint8Array;
+  encryptKey:   Uint8Array;
+  /** Defaults to encryptKey.slice(0, 32). */
+  chainSeed?:   Uint8Array;
+}
+
+/**
+ * Canonical serverless verification path. Verifies the token, then
+ * atomically advances the verifier high-water mark in the ChainStore.
+ * Throws `REPLAY` if the token's counter is not strictly above the
+ * stored value, AFTER cryptographic verification succeeds.
+ */
+export function verifyTokenWithStore(
+  params: VerifyTokenWithStoreParams,
+): Promise<VerifyTokenResult>;
 
 // ─── Re-exports from @noble (since v4.3.x) ──────────────────────────────
 

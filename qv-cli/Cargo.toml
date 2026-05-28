@@ -3,7 +3,7 @@ name = "qv-cli"
 version = "3.0.0"
 edition = "2021"
 description = "Sigvault command-line interface"
-license = "AGPL-3.0-only"
+license     = "Apache-2.0 OR AGPL-3.0-only"
 
 [[bin]]
 name = "qv"

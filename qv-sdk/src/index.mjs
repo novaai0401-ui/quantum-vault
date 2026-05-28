@@ -572,6 +572,126 @@ export function decrypt(ciphertext, key, nonce, aad) {
   return chacha.decrypt(ciphertext);
 }
 
+// ─── ChainStore interface (since v4.3.8) ─────────────────────────────────────
+//
+// Pluggable mutation-counter store so serverless / multi-instance deployments
+// can keep replay protection honest. The SDK never assumes in-memory state
+// survives across invocations — the store does. Two operations:
+//
+//   reserveNext(keyId) → bigint
+//       Atomically reserve the next counter value for keyId and persist it
+//       in your backing store BEFORE returning. The returned counter is
+//       committed; the SDK trusts it to be monotonic. Called once per
+//       token issue.
+//
+//   observe(keyId, counter)
+//       For verifiers. Update the high-water mark for keyId. Throws
+//       Error('REPLAY: ...') if `counter` is not strictly greater than
+//       the stored value. Called once per successful token verify.
+//
+// Both methods are async — your backing store is probably a network call.
+// Reference impl below is in-memory and synchronous-style; suitable for
+// single-instance deployments and tests. Production deployments back it
+// with Redis INCR, Postgres SELECT…FOR UPDATE + UPDATE, DynamoDB
+// UpdateItem-with-ADD, or a Cloudflare Durable Object — see the README
+// "Serverless cookbook" for recipes.
+//
+// All implementations must guarantee:
+//   - Atomicity of reserveNext (no two callers ever get the same counter).
+//   - Monotonicity (counters only go up).
+//   - Durability before reserveNext returns (a crash post-return must not
+//     replay the counter).
+
+/**
+ * In-memory ChainStore. Single-process, lost on restart. Good for tests,
+ * single-instance deployments where you've accepted the limitation,
+ * and as a reference implementation when porting to a distributed store.
+ */
+export class InMemoryChainStore {
+  #counters = new Map();
+
+  async reserveNext(keyId) {
+    const next = (this.#counters.get(keyId) ?? 0n) + 1n;
+    this.#counters.set(keyId, next);
+    return next;
+  }
+
+  async observe(keyId, counter) {
+    const ctr = typeof counter === 'bigint' ? counter : BigInt(counter);
+    const cur = this.#counters.get(keyId) ?? 0n;
+    if (ctr <= cur) {
+      const e = new Error(`REPLAY: counter ${ctr} <= chain counter ${cur}`);
+      e.code = 'REPLAY';
+      throw e;
+    }
+    this.#counters.set(keyId, ctr);
+  }
+
+  /** Read-only snapshot — for dashboards/debugging, not for replay decisions. */
+  current(keyId) { return this.#counters.get(keyId) ?? 0n; }
+}
+
+/**
+ * Issue a token using an external ChainStore to atomically reserve the
+ * counter. This is the canonical serverless path — your function reads
+ * + increments the counter in a shared store, then signs.
+ *
+ * @param {object} opts
+ * @param {ChainStore} opts.store           — implementation of reserveNext()
+ * @param {string}     opts.keyId           — key whose chain to advance
+ * @param {Uint8Array} opts.signingKeySeed  — 32-byte signing seed (or `signingKey` alias)
+ * @param {Uint8Array} [opts.signingKey]    — alias for signingKeySeed
+ * @param {Uint8Array} opts.encryptKey      — 32-byte XChaCha20 key
+ * @param {Uint8Array} [opts.chainSeed]     — defaults to encryptKey.slice(0, 32)
+ * @param {object}     opts.claims
+ * @param {number}     [opts.ttl=3600]
+ * @param {number}     [opts.suite]
+ * @param {number}     [opts.tokenType]
+ * @param {Uint8Array} [opts.deviceFp]
+ * @param {'auto'|true|false} [opts.compress]
+ * @returns {Promise<{ tokenBytes: Uint8Array, tokenHex: string, counter: bigint }>}
+ */
+export async function issueTokenWithStore({
+  store, keyId, chainSeed, ...rest
+}) {
+  if (!store || typeof store.reserveNext !== 'function') {
+    throw new Error('issueTokenWithStore: opts.store must implement reserveNext()');
+  }
+  if (typeof keyId !== 'string' || !keyId) {
+    throw new Error('issueTokenWithStore: opts.keyId required (string)');
+  }
+  const seed = chainSeed ?? (rest.encryptKey && rest.encryptKey.slice(0, 32));
+  if (!seed || seed.length !== 32) {
+    throw new Error('issueTokenWithStore: chainSeed (or encryptKey ≥ 32 bytes) required');
+  }
+  const counter = await store.reserveNext(keyId);
+  const result  = issueTokenAt({ ...rest, chainSeed: seed, counter });
+  return { ...result, counter };
+}
+
+/**
+ * Verify a token and atomically advance the verifier's high-water mark in
+ * the supplied ChainStore. Throws `REPLAY` on counter regression, or the
+ * underlying verify error on signature / AEAD failure. On success the
+ * store has been updated; future verifies for the same keyId at ≤ this
+ * counter will reject.
+ */
+export async function verifyTokenWithStore({
+  store, keyId, token, verifyingKey, encryptKey, chainSeed,
+}) {
+  if (!store || typeof store.observe !== 'function') {
+    throw new Error('verifyTokenWithStore: opts.store must implement observe()');
+  }
+  const seed = chainSeed ?? encryptKey.slice(0, 32);
+  // Verify against a fresh chain pegged at counter=0 so the SDK's
+  // intra-call replay check is a no-op; the cross-call check lives in the
+  // store and runs only AFTER cryptographic verify succeeds.
+  const vchain = MutationChain.fromState(seed, 0n);
+  const out = verifyToken({ token, verifyingKey, encryptKey, chain: vchain });
+  await store.observe(keyId, out.mutationCtr);
+  return out;
+}
+
 // ─── Re-exports from @noble (since v4.3.x) ───────────────────────────────────
 // Convenience: consumers that already depend on @sigvault/sdk shouldn't
 // have to install @noble themselves to use a CSPRNG or a hash. These are

@@ -2,6 +2,7 @@
 name    = "qv-wasm"
 version = "0.1.0"
 edition = "2021"
+license     = "Apache-2.0 OR AGPL-3.0-only"
 
 # Sovereign WASM build of Sigvault.
 # Build:

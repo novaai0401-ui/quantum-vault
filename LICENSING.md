@@ -6,21 +6,45 @@ what you can and cannot do.
 
 | Component | Path | Licence | SPDX |
 |-----------|------|---------|------|
-| Server | `qv-server/` | GNU AGPL-3.0-only | `AGPL-3.0-only` |
-| Rust core | `qv-core/` | GNU AGPL-3.0-only | `AGPL-3.0-only` |
-| CLI | `qv-cli/` | GNU AGPL-3.0-only | `AGPL-3.0-only` |
-| FFI | `qv-ffi/` | GNU AGPL-3.0-only | `AGPL-3.0-only` |
-| WASM | `qv-wasm/` | GNU AGPL-3.0-only | `AGPL-3.0-only` |
-| SDK (npm) | `qv-sdk/` | Apache-2.0 | `Apache-2.0` |
-| SDK (Python) | `qv-python/` | Apache-2.0 | `Apache-2.0` |
+| **Server (binary distribution)** | `qv-server/` + `ghcr.io/...:qv-server` | GNU AGPL-3.0-only | `AGPL-3.0-only` |
+| Rust core | `qv-core/` | **Dual: Apache-2.0 OR AGPL-3.0-only** | `Apache-2.0 OR AGPL-3.0-only` |
+| CLI | `qv-cli/` | **Dual: Apache-2.0 OR AGPL-3.0-only** | `Apache-2.0 OR AGPL-3.0-only` |
+| FFI | `qv-ffi/` | **Dual: Apache-2.0 OR AGPL-3.0-only** | `Apache-2.0 OR AGPL-3.0-only` |
+| WASM (Rust source) | `qv-wasm/` | **Dual: Apache-2.0 OR AGPL-3.0-only** | `Apache-2.0 OR AGPL-3.0-only` |
+| **WASM (npm package)** | `@sigvault/wasm` | **Apache-2.0** | `Apache-2.0` |
+| SDK (npm) | `qv-sdk/` → `@sigvault/sdk` | Apache-2.0 | `Apache-2.0` |
+| SDK (Python) | `qv-python/` → `sigvault` (PyPI) | Apache-2.0 | `Apache-2.0` |
 | SDK adapters (Go, Java, PHP, C#, Ruby) | `qv-sdk/{go,java,php,csharp,ruby}/` | Apache-2.0 | `Apache-2.0` |
 | Specification | `qv-spec/` | CC BY 4.0 | `CC-BY-4.0` |
 | Documentation | `docs/` | CC BY 4.0 | `CC-BY-4.0` |
 | Helm chart, ops scripts | `qv-ops/` | Apache-2.0 | `Apache-2.0` |
 
 The repository's root `LICENSE` file contains the AGPL-3.0 text that
-governs the **server, core, CLI, FFI, and WASM crates**. Each
-permissively-licensed subdirectory carries its own `LICENSE` file.
+governs the **server binary distribution**. The Rust crates (`qv-core`,
+`qv-cli`, `qv-ffi`, `qv-wasm`) are **dual-licensed** under either
+Apache-2.0 OR AGPL-3.0-only — consumers choose. Each permissively-
+licensed subdirectory carries its own `LICENSE` file.
+
+## Why dual-licensing the crates?
+
+Same pattern used by `tokio`, `serde`, `rand`, and the rest of the
+production Rust ecosystem. A consumer who links one of our crates into
+their own application picks the licence that fits their distribution:
+
+- A SaaS product, a closed-source desktop app, or a network-facing API
+  layer chooses **Apache-2.0** — no source-disclosure obligation, no
+  AGPL §13 trigger.
+- A copyleft project, or one that already runs under AGPL, may choose
+  **AGPL-3.0-only** to keep the licence chain consistent.
+
+We choose AGPL ourselves for the **server binary distribution** because
+that's the surface hyperscalers would otherwise free-ride on. Anyone
+running our published `qv-server` binary or `ghcr.io/.../qv-server`
+image is using the AGPL leg.
+
+**Client crypto libraries** (`@sigvault/wasm`, `qv-ffi`, the SDKs) are
+explicitly permissively-licensed because copyleft on a crypto library
+breaks adoption — exactly the JWT-alternative positioning we want.
 
 ## Plain-English summary
 

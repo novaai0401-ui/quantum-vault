@@ -62,31 +62,191 @@ console.log(result.claims); // { sub: 'user-123', role: 'admin' }
 - TypeScript declarations (`index.d.ts`) — TS consumers get full types out of the box
 - Wire-format compatible with the Rust `qv-core` and the REST server
 
-### Serverless mode
+### Serverless cookbook — `ChainStore`
 
 In AWS Lambda / Cloudflare Workers / Vercel Functions the function instance
 disappears between invocations. A `new MutationChain()` therefore starts at
 counter=0 every cold start and **replay protection silently breaks**.
 
-Use `issueTokenAt` and hold the counter in an external atomic store:
+The SDK ships a `ChainStore` interface (since v4.3.8) so you don't have to
+roll the atomicity yourself:
+
+```ts
+interface ChainStore {
+  reserveNext(keyId: string): Promise<bigint>;  // issue side — atomic
+  observe(keyId: string, counter: bigint): Promise<void>;  // verify side — throws REPLAY
+}
+```
+
+Pair it with `issueTokenWithStore` and `verifyTokenWithStore`:
 
 ```js
-import { issueTokenAt } from '@sigvault/sdk';
+import {
+  issueTokenWithStore, verifyTokenWithStore, InMemoryChainStore,
+} from '@sigvault/sdk';
 
-// Pseudocode — replace with your atomic-increment store
-const next = await redis.incr(`sigvault:ctr:${keyId}`);
+const store = new InMemoryChainStore();   // dev only — see below for real ones
 
-const { tokenHex } = issueTokenAt({
-  signingKeySeed: signingKey,
-  encryptKey,
-  chainSeed: encryptKey.slice(0, 32),  // the deterministic seed used server-side
-  counter: BigInt(next),
-  claims: { sub: 'alice' },
+const { tokenHex, counter } = await issueTokenWithStore({
+  store, keyId: 'svc-api',
+  signingKey, encryptKey,
+  claims: { sub: 'alice', role: 'admin' },
+});
+
+const verified = await verifyTokenWithStore({
+  store, keyId: 'svc-api',
+  token: tokenHex, verifyingKey, encryptKey,
 });
 ```
 
-Verify side: hold `last_seen_ctr_per_keyId` in the same store and reject tokens
-whose counter is `<=` the stored value.
+The store guarantees:
+
+1. **Atomic reserveNext** — concurrent callers never see the same counter.
+2. **Durable before return** — a crash post-`reserveNext` cannot replay.
+3. **Monotonic observe** — verifier high-water mark only goes up.
+
+#### Redis (single-instance — global atomic counter)
+
+```js
+class RedisChainStore /* implements ChainStore */ {
+  constructor(redis, prefix = 'sv') { this.r = redis; this.p = prefix; }
+  async reserveNext(keyId) {
+    const n = await this.r.incr(`${this.p}:i:${keyId}`);   // atomic
+    return BigInt(n);
+  }
+  async observe(keyId, counter) {
+    // Lua: only set if greater. Returns 1 on update, 0 on regression.
+    const ok = await this.r.eval(`
+      local cur = tonumber(redis.call('GET', KEYS[1]) or '0')
+      if tonumber(ARGV[1]) > cur then
+        redis.call('SET', KEYS[1], ARGV[1]); return 1
+      end
+      return 0
+    `, 1, `${this.p}:v:${keyId}`, counter.toString());
+    if (!ok) {
+      const e = new Error(`REPLAY: counter ${counter} not above stored`);
+      e.code = 'REPLAY'; throw e;
+    }
+  }
+}
+```
+
+#### Postgres (SERIALIZABLE on a single counters table)
+
+```sql
+CREATE TABLE sigvault_chain (
+  key_id  text   PRIMARY KEY,
+  counter bigint NOT NULL DEFAULT 0
+);
+```
+
+```js
+class PostgresChainStore {
+  constructor(pool) { this.pool = pool; }
+  async reserveNext(keyId) {
+    const { rows } = await this.pool.query(`
+      INSERT INTO sigvault_chain (key_id, counter) VALUES ($1, 1)
+      ON CONFLICT (key_id)
+      DO UPDATE SET counter = sigvault_chain.counter + 1
+      RETURNING counter
+    `, [keyId]);
+    return BigInt(rows[0].counter);
+  }
+  async observe(keyId, counter) {
+    const { rowCount } = await this.pool.query(`
+      INSERT INTO sigvault_chain (key_id, counter) VALUES ($1, $2)
+      ON CONFLICT (key_id)
+      DO UPDATE SET counter = $2 WHERE sigvault_chain.counter < $2
+    `, [keyId, counter.toString()]);
+    if (rowCount === 0) {
+      const e = new Error('REPLAY'); e.code = 'REPLAY'; throw e;
+    }
+  }
+}
+```
+
+#### DynamoDB (UpdateItem with ADD + ConditionExpression)
+
+```js
+class DynamoChainStore {
+  constructor(ddb, table = 'sigvault_chain') { this.d = ddb; this.t = table; }
+  async reserveNext(keyId) {
+    const r = await this.d.update({
+      TableName: this.t,
+      Key: { keyId: { S: keyId } },
+      UpdateExpression: 'ADD #c :one',
+      ExpressionAttributeNames:  { '#c': 'counter' },
+      ExpressionAttributeValues: { ':one': { N: '1' } },
+      ReturnValues: 'UPDATED_NEW',
+    });
+    return BigInt(r.Attributes.counter.N);
+  }
+  async observe(keyId, counter) {
+    try {
+      await this.d.update({
+        TableName: this.t,
+        Key: { keyId: { S: keyId } },
+        UpdateExpression: 'SET #c = :n',
+        ConditionExpression: 'attribute_not_exists(#c) OR #c < :n',
+        ExpressionAttributeNames:  { '#c': 'counter' },
+        ExpressionAttributeValues: { ':n': { N: counter.toString() } },
+      });
+    } catch (e) {
+      if (e.name === 'ConditionalCheckFailedException') {
+        const re = new Error('REPLAY'); re.code = 'REPLAY'; throw re;
+      }
+      throw e;
+    }
+  }
+}
+```
+
+#### Cloudflare Durable Object (single-instance per keyId — atomic by construction)
+
+```js
+export class ChainCounter {
+  constructor(state) { this.state = state; }
+  async fetch(req) {
+    const url = new URL(req.url);
+    if (url.pathname === '/reserve') {
+      const cur = (await this.state.storage.get('c')) ?? 0n;
+      const next = cur + 1n;
+      await this.state.storage.put('c', next);
+      return Response.json({ counter: next.toString() });
+    }
+    if (url.pathname === '/observe') {
+      const { counter } = await req.json();
+      const ctr = BigInt(counter);
+      const cur = (await this.state.storage.get('c')) ?? 0n;
+      if (ctr <= cur) return new Response('REPLAY', { status: 409 });
+      await this.state.storage.put('c', ctr);
+      return new Response('ok');
+    }
+  }
+}
+
+// On the worker side, wrap the DO as a ChainStore:
+class DurableObjectChainStore {
+  constructor(namespace) { this.ns = namespace; }
+  async reserveNext(keyId) {
+    const stub = this.ns.get(this.ns.idFromName(keyId));
+    const { counter } = await (await stub.fetch('https://do/reserve')).json();
+    return BigInt(counter);
+  }
+  async observe(keyId, counter) {
+    const stub = this.ns.get(this.ns.idFromName(keyId));
+    const r = await stub.fetch('https://do/observe', {
+      method: 'POST', body: JSON.stringify({ counter: counter.toString() }),
+    });
+    if (r.status === 409) {
+      const e = new Error('REPLAY'); e.code = 'REPLAY'; throw e;
+    }
+  }
+}
+```
+
+All four implementations satisfy the `ChainStore` contract. Pick the one
+that matches your existing infrastructure — Sigvault doesn't care which.
 
 ### Falcon-512 / Falcon-1024 — current status
 

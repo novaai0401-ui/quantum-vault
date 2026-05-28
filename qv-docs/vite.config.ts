@@ -13,5 +13,11 @@ export default defineConfig({
     // All evergreen browsers (Chrome 89+, Firefox 89+, Safari 15+) support it.
     target: 'es2022',
   },
+  // The dev-mode esbuild dep-optimizer uses its OWN target (separate from
+  // build.target). Without this, the SDK's top-level await fails to bundle
+  // for the dev server even though the production build works.
+  optimizeDeps: {
+    esbuildOptions: { target: 'es2022' },
+  },
   server: { port: 5173 },
 });
