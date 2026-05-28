@@ -69,3 +69,7 @@ venv
 # npm auth files — never commit
 .npmrc
 **/.npmrc
+
+# wasm publish artefacts — built by the release workflow, not committed
+qv-wasm/pkg/qv_wasm.wasm
+qv-wasm/pkg/LICENSE
