@@ -180,18 +180,36 @@ export interface VerifyTokenResult {
 }
 
 /** Result of `inspectToken`. */
+/**
+ * Public view of a token's header (no signature verification). String
+ * fields use formatted hex/labels rather than raw numbers so the result
+ * is operator-readable; for raw bytes deserialise the token yourself.
+ */
 export interface InspectResult {
+  /** `"0x51564C54"` — the MAGIC bytes ('QVLT'). */
   magic:       string;
+  /** `"0x0300"` — wire-format version. */
   version:     string;
+  /** Suite name + hex, e.g. `"Dilithium5 (0x05)"`. */
   suite:       string;
+  /** Token-type name, e.g. `"Access"`. */
   tokenType:   string;
+  /** Issued-at microseconds since the Unix epoch (as a string). */
   issuedAt:    string;
-  ttl:         number;
+  /** TTL with unit, e.g. `"3600s"`. */
+  ttl:         string;
+  /** Hex-encoded 32-byte nonce. */
+  nonce:       string;
+  /** Hex-encoded 32-byte device fingerprint. */
+  deviceFp:    string;
+  /** Mutation counter (as a string — value can exceed Number.MAX_SAFE_INTEGER). */
   mutationCtr: string;
-  nonceB64:    string;
-  deviceFpB64: string;
-  payloadLen:  number;
-  signatureLen: number;
+  /** Encrypted payload size, e.g. `"22 bytes (encrypted)"`. */
+  payloadLen:  string;
+  /** Signature size, e.g. `"4627 bytes"`. */
+  sigLen:      string;
+  /** Total token byte count. */
+  totalBytes:  number;
 }
 
 // ─── Functions ──────────────────────────────────────────────────────────

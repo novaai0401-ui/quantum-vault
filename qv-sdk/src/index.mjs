@@ -503,6 +503,7 @@ export function inspectToken(tokenHexOrBytes) {
   const suiteName = Object.entries(SUITE_IDS).find(([,v]) => v === header.suite)?.[0] ?? 'unknown';
   const typeName  = Object.entries(TOKEN_TYPES).find(([,v]) => v === header.tokenType)?.[0] ?? 'unknown';
   return {
+    magic:       `0x${MAGIC.toString(16).toUpperCase()}`,
     version:     `0x${VERSION.toString(16).padStart(4,'0')}`,
     suite:       `${suiteName} (0x${header.suite.toString(16).padStart(2,'0')})`,
     tokenType:   typeName,
