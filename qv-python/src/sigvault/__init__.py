@@ -25,7 +25,7 @@ Running the server
 
     docker run -p 7433:7433 \\
         -e QV_MASTER_KEY_HEX=$(openssl rand -hex 32) \\
-        ghcr.io/007krcs/qv-server:4.2
+        ghcr.io/novaai0401-ui/qv-server:4.2
 
 or any binary / Node build of qv-server.
 """

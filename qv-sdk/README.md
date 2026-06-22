@@ -286,7 +286,7 @@ and you'll get `COMPRESSION_UNAVAILABLE` if the runtime can't honour it.
 Pair this SDK with the zero-dependency REST server for a stateful backend:
 
 ```bash
-docker run -p 7433:7433 ghcr.io/007krcs/qv-server:4.3
+docker run -p 7433:7433 ghcr.io/novaai0401-ui/qv-server:4.3
 ```
 
 …or run `cargo add qv-core --features falcon` if your backend is Rust.

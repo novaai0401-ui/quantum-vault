@@ -131,8 +131,20 @@ fn parse_falcon_n(s: &str) -> Result<u16, String> {
 }
 
 fn main() {
+    // ML-DSA-87 and Falcon stack-allocate multi-KB key buffers inside their
+    // keygen / sign / verify routines. On Windows the default main-thread
+    // stack is 1 MB and debug builds with no inlining overflow it on
+    // `keygen`. Re-entering `run` on an 8 MB worker thread sidesteps it
+    // without changing the algorithm or paying heap-alloc cost in the
+    // common path. Release builds also benefit from the headroom — Falcon
+    // keygen uses on the order of 100 KB even after optimisation.
     let cli = Cli::parse();
-    if let Err(e) = run(cli.command) {
+    let handle = std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || run(cli.command))
+        .expect("spawn keygen worker");
+    let result = handle.join().expect("worker panicked");
+    if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }

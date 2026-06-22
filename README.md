@@ -32,10 +32,10 @@ cargo add qv-core --features falcon
 # REST server (zero npm deps, multi-arch)
 docker run -p 7433:7433 \
   -e QV_MASTER_KEY_HEX=$(openssl rand -hex 32) \
-  ghcr.io/007krcs/qv-server:4.2
+  ghcr.io/novaai0401-ui/qv-server:4.2
 
 # C / Go / C# / Swift — prebuilt libqv
-curl -L https://github.com/007krcs/quantum-vault/releases/latest/download/libqv-$(uname -m)-$(uname -s | tr A-Z a-z).tar.gz | tar xz
+curl -L https://github.com/novaai0401-ui/quantum-vault/releases/latest/download/libqv-$(uname -m)-$(uname -s | tr A-Z a-z).tar.gz | tar xz
 ```
 
 ## Supply-chain stance
@@ -96,7 +96,7 @@ const { claims } = verifyToken({
 ## What's in v4.2
 
 - **Installable everywhere.** npm (`@sigvault/sdk`, `@sigvault/wasm`),
-  crates.io (`qv-core`), Docker (`ghcr.io/007krcs/qv-server`), and prebuilt
+  crates.io (`qv-core`), Docker (`ghcr.io/novaai0401-ui/qv-server`), and prebuilt
   FFI binaries on GitHub Releases for 5 platforms.
 - **Falcon dispatch** in `issue_token` / `verify_token`. Falcon-512 gives you
   656-byte signatures — **7.1× smaller than ML-DSA-87** and 6× faster to
@@ -104,7 +104,7 @@ const { claims } = verifyToken({
   wire.
 - **Offline builds restored.** `./vendor` now contains Falcon + all transitive
   crates; `cargo build` works air-gapped.
-- **Docker image.** `ghcr.io/007krcs/qv-server` runs as non-root, multi-arch
+- **Docker image.** `ghcr.io/novaai0401-ui/qv-server` runs as non-root, multi-arch
   (amd64 + arm64), health-checked.
 
 ## Repo layout
@@ -114,7 +114,7 @@ qv-core/    Rust library → crates.io (qv-core)
 qv-ffi/     C ABI wrapper → GitHub Releases (libqv.{so,dylib,dll})
 qv-wasm/    WebAssembly build → npm (@sigvault/wasm)
 qv-sdk/     JavaScript SDK → npm (@sigvault/sdk)
-qv-server/  REST server → ghcr.io/007krcs/qv-server (Dockerfile included)
+qv-server/  REST server → ghcr.io/novaai0401-ui/qv-server (Dockerfile included)
 qv-cli/     Optional CLI
 qv-docs/    Vite + React + tekivex-ui docs/demo site
 vendor/     Vendored Rust source tree (offline-buildable)

@@ -7,7 +7,7 @@ assignees: ''
 ---
 
 > ⚠️ **Are you reporting a vulnerability?** Don't use this template.
-> Open a private [GitHub Security Advisory](https://github.com/007krcs/quantum-vault/security/advisories/new)
+> Open a private [GitHub Security Advisory](https://github.com/novaai0401-ui/quantum-vault/security/advisories/new)
 > instead. See [SECURITY.md](../SECURITY.md).
 
 This template is for **public** security discussions: hardening

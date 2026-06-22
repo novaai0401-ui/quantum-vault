@@ -1,6 +1,6 @@
 # qv-core
 
-The Rust core of [Sigvault](https://github.com/007krcs/quantum-vault) —
+The Rust core of [Sigvault](https://github.com/novaai0401-ui/quantum-vault) —
 post-quantum cryptographic tokens that are quantum-safe, authenticated,
 encrypted, and replay-protected.
 
@@ -95,4 +95,4 @@ Every `verify_token` call runs:
 
 ## License
 
-Apache-2.0. See [LICENSE](https://github.com/007krcs/quantum-vault/blob/main/LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/novaai0401-ui/quantum-vault/blob/main/LICENSE).

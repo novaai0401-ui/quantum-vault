@@ -10,12 +10,12 @@ keywords:
   - identity
   - tokens
   - security
-home: https://github.com/007krcs/quantum-vault
+home: https://github.com/novaai0401-ui/quantum-vault
 sources:
-  - https://github.com/007krcs/quantum-vault
+  - https://github.com/novaai0401-ui/quantum-vault
 maintainers:
-  - name: 007krcs
-icon: https://raw.githubusercontent.com/007krcs/quantum-vault/main/docs/logo.png
+  - name: novaai0401-ui
+icon: https://raw.githubusercontent.com/novaai0401-ui/quantum-vault/main/docs/logo.png
 annotations:
   artifacthub.io/license: BUSL-1.1
   artifacthub.io/changes: |

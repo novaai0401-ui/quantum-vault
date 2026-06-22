@@ -8,7 +8,7 @@ won't waste your time.
 
 **Please do _not_ open a public GitHub issue for security problems.**
 
-Preferred channel: **[GitHub Security Advisories](https://github.com/007krcs/quantum-vault/security/advisories/new)**.
+Preferred channel: **[GitHub Security Advisories](https://github.com/novaai0401-ui/quantum-vault/security/advisories/new)**.
 This keeps the discussion private, assigns a CVE if applicable, and
 lets us coordinate a fix + release.
 
@@ -56,7 +56,7 @@ mitigations while long-term work continues.
 - `qv-ffi` / `libqv` (C ABI + prebuilt binaries)
 - `qv-wasm` / `@sigvault/wasm`
 - `qv-sdk` / `@sigvault/sdk`
-- `qv-server` / `ghcr.io/007krcs/qv-server`
+- `qv-server` / `ghcr.io/novaai0401-ui/qv-server`
 - `sigvault` (PyPI REST client)
 - `qv-docs` (if a doc issue materially misleads users about security posture)
 - The GitHub Actions release pipeline and published artifact signatures

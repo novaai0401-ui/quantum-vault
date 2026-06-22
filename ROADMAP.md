@@ -15,7 +15,7 @@ Shipped across 5 registries:
 - **npm** — `@sigvault/sdk`, `@sigvault/wasm`
 - **PyPI** — `sigvault` (REST client)
 - **crates.io** — `qv-core` (ML-DSA-87 + Falcon-512/1024)
-- **GHCR** — `ghcr.io/007krcs/qv-server:4.2.0` (multi-arch)
+- **GHCR** — `ghcr.io/novaai0401-ui/qv-server:4.2.0` (multi-arch)
 - **GitHub Releases** — prebuilt `libqv.{so,dylib,dll}` for 5 platforms
 
 See [`CHANGELOG.md`](./CHANGELOG.md) for the full list of v4.2 changes.
@@ -103,7 +103,7 @@ Theme: **you can actually deploy qv-server to a K8s cluster.**
 | **R-4.3.7** | `/v3/health/live` + `/v3/health/ready` split. | O-5 |
 | **R-4.3.8** | Graceful SIGTERM shutdown with in-flight drain. | O-6 |
 | **R-4.3.9** | Per-IP token-bucket rate limits + request-size caps. | O-4 |
-| **R-4.3.10** | Helm chart published to `ghcr.io/007krcs/charts`. | I-6 |
+| **R-4.3.10** | Helm chart published to `ghcr.io/novaai0401-ui/charts`. | I-6 |
 
 **Success metric:** qv-server passes a 10-replica K8s deployment with a
 chaos-engineering suite (pod kill, network partition) without

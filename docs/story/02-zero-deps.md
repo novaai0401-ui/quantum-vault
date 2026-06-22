@@ -165,7 +165,7 @@ actually *improvements*:
   no packages to `node_modules/` beyond what Node ships.
 - `npm test` runs on a machine with `offline` mode in npm with no
   cache and still passes.
-- The Docker image (`ghcr.io/007krcs/qv-server`) contains **zero** npm
+- The Docker image (`ghcr.io/novaai0401-ui/qv-server`) contains **zero** npm
   packages.
 
 ## The comparison

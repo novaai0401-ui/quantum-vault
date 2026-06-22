@@ -165,6 +165,20 @@ export class MutationChain {
       throw new Error(`REPLAY: token counter ${tc} <= chain counter ${this.#counter}`);
     }
   }
+
+  /**
+   * Advance the chain's high-water mark to a specific counter. Called by
+   * `verifyToken` after a successful verification so that the same token
+   * cannot be verified twice against the same chain instance. Throws if
+   * the target is not strictly above the current counter.
+   */
+  advanceTo(targetCtr) {
+    const t = BigInt(targetCtr);
+    if (t <= this.#counter) {
+      throw new Error(`REPLAY: target counter ${t} <= chain counter ${this.#counter}`);
+    }
+    while (this.#counter < t) this.advance();
+  }
 }
 
 // ─── Payload encryption (XChaCha20-Poly1305) ─────────────────────────────────
@@ -190,8 +204,25 @@ function encodeClaims(claims) {
   if (entries.length > 15) throw new Error('too many claims (max 15)');
   const parts = [new Uint8Array([0x80 | entries.length])];
   for (const [k, v] of entries) {
+    // Wire format carries a minimal string→string map. Stringify
+    // primitives losslessly; reject objects/arrays so they cannot
+    // silently round-trip as "[object Object]".
+    const t = typeof v;
+    let s;
+    if (t === 'string')              s = v;
+    else if (t === 'number' && Number.isFinite(v)) s = String(v);
+    else if (t === 'bigint')         s = String(v);
+    else if (t === 'boolean')        s = String(v);
+    else if (v === null)             s = 'null';
+    else {
+      throw new Error(
+        `claim "${k}" has unsupported value type (${t}). ` +
+        `Sigvault claims accept string | number | bigint | boolean | null only. ` +
+        `JSON.stringify(...) nested data yourself if you need richer shape.`
+      );
+    }
     parts.push(encodeStr(k));
-    parts.push(encodeStr(String(v)));
+    parts.push(encodeStr(s));
   }
   return concat(...parts);
 }
@@ -465,8 +496,11 @@ export function verifyToken({ token, verifyingKey, encryptKey, chain }) {
   // Layer 5 — decrypt payload.
   const plaintext = decryptPayload(encPayload, encryptKey, header.nonce);
 
-  // Layer 6 — replay detection.
+  // Layer 6 — replay detection. Token counter MUST be strictly above
+  // the chain's current high-water mark; on success we advance the chain
+  // so the same token cannot verify twice against the same instance.
   chain.checkTokenCounter(header.mutationCtr);
+  chain.advanceTo(header.mutationCtr);
 
   // Layer 7 — decompress (if v4.1 marker) then decode claims. On a
   // runtime without sync decompression and a deflate-marked token we

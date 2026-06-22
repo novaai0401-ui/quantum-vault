@@ -32,11 +32,11 @@ FROM node:${NODE_VERSION}@${NODE_DIGEST} AS runtime
 
 LABEL org.opencontainers.image.title="Sigvault Server"
 LABEL org.opencontainers.image.description="Post-quantum token REST server (ML-DSA-87, Falcon-512/1024) — zero npm dependencies, Node stdlib only."
-LABEL org.opencontainers.image.source="https://github.com/007krcs/quantum-vault"
-LABEL org.opencontainers.image.url="https://github.com/007krcs/quantum-vault"
-LABEL org.opencontainers.image.documentation="https://github.com/007krcs/quantum-vault/tree/main/docs/story"
+LABEL org.opencontainers.image.source="https://github.com/novaai0401-ui/quantum-vault"
+LABEL org.opencontainers.image.url="https://github.com/novaai0401-ui/quantum-vault"
+LABEL org.opencontainers.image.documentation="https://github.com/novaai0401-ui/quantum-vault/tree/main/docs/story"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
-LABEL org.opencontainers.image.vendor="007krcs"
+LABEL org.opencontainers.image.vendor="Sigvault"
 
 # ── Hardened runtime ────────────────────────────────────────────────────────
 # Run as a non-root user for defense-in-depth. UID/GID pinned to 10001 so

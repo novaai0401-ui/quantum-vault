@@ -3,7 +3,7 @@
 # safe-by-default for a single-replica deployment.
 
 image:
-  repository: ghcr.io/007krcs/qv-server
+  repository: ghcr.io/novaai0401-ui/qv-server
   tag: ""             # defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 

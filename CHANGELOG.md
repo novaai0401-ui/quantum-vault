@@ -506,7 +506,7 @@ major language ecosystem can install it natively.
   `falcon` feature (requires a C toolchain).
 - **`sigvault`** on PyPI — stdlib-only REST client, Python 3.8+,
   one universal `py3-none-any` wheel.
-- **`ghcr.io/007krcs/qv-server`** on GHCR — multi-arch
+- **`ghcr.io/novaai0401-ui/qv-server`** on GHCR — multi-arch
   (`linux/amd64` + `linux/arm64`) Docker image, non-root, zero npm
   dependencies.
 - **Prebuilt `libqv`** on GitHub Releases for five platforms:
@@ -577,5 +577,5 @@ Top three to know before deploying:
 
 ---
 
-[Unreleased]: https://github.com/007krcs/quantum-vault/compare/v4.2.0...HEAD
-[4.2.0]: https://github.com/007krcs/quantum-vault/releases/tag/v4.2.0
+[Unreleased]: https://github.com/novaai0401-ui/quantum-vault/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/novaai0401-ui/quantum-vault/releases/tag/v4.2.0

@@ -88,7 +88,7 @@ function sbom() {
     metadata: {
       timestamp: new Date().toISOString(),
       tools: [{
-        vendor:  '007krcs',
+        vendor:  'Sigvault',
         name:    'qv-ops/scripts/sbom.mjs',
         version: '1.0.0',
       }],

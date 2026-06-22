@@ -158,8 +158,8 @@ Every released image is signed (keyless OIDC). Operators verify before
 running:
 
 ```bash
-cosign verify ghcr.io/007krcs/qv-server:4.3.0 \
-  --certificate-identity-regexp '^https://github\.com/007krcs/quantum-vault/' \
+cosign verify ghcr.io/novaai0401-ui/qv-server:4.3.0 \
+  --certificate-identity-regexp '^https://github\.com/novaai0401-ui/quantum-vault/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -168,7 +168,7 @@ Pull the SBOM as well:
 ```bash
 cosign download attestation \
   --predicate-type=https://cyclonedx.org/bom \
-  ghcr.io/007krcs/qv-server:4.3.0 > sbom.json
+  ghcr.io/novaai0401-ui/qv-server:4.3.0 > sbom.json
 ```
 
 ### Transitive dependency policy

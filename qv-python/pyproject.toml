@@ -28,10 +28,10 @@ classifiers = [
 dependencies = []  # stdlib-only — no runtime deps, no wheels to rot
 
 [project.urls]
-Homepage      = "https://github.com/007krcs/quantum-vault"
-Repository    = "https://github.com/007krcs/quantum-vault"
-Issues        = "https://github.com/007krcs/quantum-vault/issues"
-Documentation = "https://github.com/007krcs/quantum-vault#readme"
+Homepage      = "https://github.com/novaai0401-ui/quantum-vault"
+Repository    = "https://github.com/novaai0401-ui/quantum-vault"
+Issues        = "https://github.com/novaai0401-ui/quantum-vault/issues"
+Documentation = "https://github.com/novaai0401-ui/quantum-vault#readme"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sigvault"]

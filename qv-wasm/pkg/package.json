@@ -35,13 +35,13 @@
   ],
   "author": "Sigvault contributors",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/007krcs/quantum-vault#readme",
+  "homepage": "https://github.com/novaai0401-ui/quantum-vault#readme",
   "bugs": {
-    "url": "https://github.com/007krcs/quantum-vault/issues"
+    "url": "https://github.com/novaai0401-ui/quantum-vault/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/007krcs/quantum-vault.git",
+    "url": "git+https://github.com/novaai0401-ui/quantum-vault.git",
     "directory": "qv-wasm"
   },
   "engines": {

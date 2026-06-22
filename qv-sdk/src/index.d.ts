@@ -48,7 +48,20 @@ export const SK_SEED_LEN: 32;
 // ─── Types ──────────────────────────────────────────────────────────────
 
 /** A bag of arbitrary JSON-serialisable claim values keyed by string. */
-export type Claims = Record<string, unknown>;
+/**
+ * A token's claim map. Wire format is a minimal MessagePack-subset
+ * carrying string keys → primitive values:
+ *
+ *  - At most **15** keys per token.
+ *  - Each key and each stringified value is at most **255 bytes**.
+ *  - Values must be `string | number | bigint | boolean | null`.
+ *    Anything else (objects, arrays, functions, Symbols, undefined)
+ *    is rejected at issue time. If you need richer shape, JSON-stringify
+ *    it yourself and put the resulting string in.
+ *  - All values decode as **strings**. `42` issues fine but verifies as
+ *    `"42"`. Re-parse client-side if you need typed reads.
+ */
+export type Claims = Record<string, string | number | bigint | boolean | null>;
 
 /**
  * Per-key cryptographic chain that prevents token replay.
@@ -87,6 +100,14 @@ export class MutationChain {
 
   /** Throws `Error('REPLAY: ...')` if `tokenCtr` is not strictly greater than current. */
   checkTokenCounter(tokenCtr: bigint | number): void;
+
+  /**
+   * Advance the chain's high-water mark to a specific counter. Called by
+   * `verifyToken` after a successful verification so that the same token
+   * cannot be verified twice against the same chain instance. Throws if
+   * the target is not strictly above the current counter.
+   */
+  advanceTo(targetCtr: bigint | number): void;
 
   /** Current counter (number of `advance()` calls so far). */
   readonly counter: bigint;
@@ -333,9 +354,12 @@ export class InMemoryChainStore implements ChainStore {
 }
 
 /** Parameters for `issueTokenWithStore`. */
-export interface IssueTokenWithStoreParams extends Omit<IssueTokenAtParams, 'counter'> {
+export interface IssueTokenWithStoreParams
+  extends Omit<IssueTokenAtParams, 'counter' | 'chainSeed'> {
   store: ChainStore;
   keyId: string;
+  /** Defaults to encryptKey.slice(0, 32). */
+  chainSeed?: Uint8Array;
 }
 
 /** Result of `issueTokenWithStore` — includes the counter that was reserved. */

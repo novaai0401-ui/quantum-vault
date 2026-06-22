@@ -174,7 +174,7 @@ async function main() {
       const r = await fetch(`${base}/v3/token/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyId, tokenHex: pool[i] }),
+        body: JSON.stringify({ keyId, token: pool[i] }),
       });
       if (!r.ok) throw new Error(`verify ${r.status}`);
     }, OPS, /* concurrency */ 1);

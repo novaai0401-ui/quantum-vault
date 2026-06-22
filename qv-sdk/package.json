@@ -1,6 +1,6 @@
 {
   "name": "@sigvault/sdk",
-  "version": "4.3.10",
+  "version": "4.3.11",
   "description": "Sigvault post-quantum token SDK — ML-DSA-87 (Dilithium-5) + XChaCha20-Poly1305 + SHA3-256. Works in Node, Deno, Bun, Cloudflare Workers, and modern browsers.",
   "type": "module",
   "main": "./src/index.mjs",
@@ -34,13 +34,13 @@
   ],
   "author": "Sigvault contributors",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/007krcs/quantum-vault#readme",
+  "homepage": "https://github.com/novaai0401-ui/quantum-vault#readme",
   "bugs": {
-    "url": "https://github.com/007krcs/quantum-vault/issues"
+    "url": "https://github.com/novaai0401-ui/quantum-vault/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/007krcs/quantum-vault.git",
+    "url": "git+https://github.com/novaai0401-ui/quantum-vault.git",
     "directory": "qv-sdk"
   },
   "engines": {
