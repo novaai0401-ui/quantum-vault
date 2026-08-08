@@ -24,6 +24,22 @@ See [`CHANGELOG.md`](./CHANGELOG.md) for the full list of v4.2 changes.
 
 ## Known limitations in v4.2.0
 
+> **⚠ Historical snapshot (v4.2.0).** Most of these are resolved as of
+> v4.3.11 — the current, maintained catalogue lives in
+> [docs/story/15-limitations.md](./docs/story/15-limitations.md).
+> Resolved since this table was written: C-1 (Postgres ChainStore),
+> C-4 (pluggable MasterKeyProvider), C-5 (durable revoked.json),
+> O-1 (fsync discipline via durable.mjs), O-2 (Prometheus + OTLP),
+> O-3 (JSONL audit log + rotation), O-4 (rate limits + body caps),
+> O-5 (/v3/live vs /v3/ready), O-6 (graceful drain), I-2 partially
+> (/.well-known/sigvault-keys.json discovery), I-4 (six stdlib REST
+> SDKs), I-5 (Express/Fastify middlewares), I-6 (Helm chart),
+> I-7/I-8 (cosign + SLSA provenance + CycloneDX SBOM in CI),
+> G-1/G-2 (SECURITY.md, CODEOWNERS), D-5 (bench.mjs), D-7 (CHANGELOG).
+> Still open: C-2 (wire-format kid, v5.0), C-3, C-6 (third-party
+> audit), C-7 (Falcon side-channel measurement), C-8 (hybrid suites),
+> O-7 (HA), I-1 (OIDC layer), I-3.
+
 Grouped by domain, ordered by blocker severity.
 
 ### Cryptographic / protocol

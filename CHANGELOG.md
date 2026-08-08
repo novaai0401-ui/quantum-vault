@@ -13,6 +13,28 @@ _Tracking v4.3 — see [ROADMAP.md](./ROADMAP.md#v43--production-ready-server-6-
 
 ### Added
 
+- **Limitation-closure sweep (L2/L13/L15, I-2/I-5).**
+  - **Key discovery document** — `GET /.well-known/sigvault-keys.json`
+    lists every active (non-revoked) key with keyId, SHA3-256
+    fingerprint, and base64url VK (cache-control max-age=300).
+    JWKS-equivalent, deliberately not RFC 7517 (no final JWK mapping
+    for ML-DSA-87 yet). OpenAPI spec updated in lock-step; new
+    integration test `test/integration.wellknown.test.mjs`.
+  - **Express + Fastify middlewares** (`qv-sdk/src/middleware/`,
+    exported as `@sigvault/sdk/middleware/{express,fastify}`). Local
+    in-process verify (with ChainStore replay protection) or remote
+    delegation to qv-server via verify / verify-auto. Zero deps —
+    neither framework is imported. 8 unit tests.
+  - **Polyglot SDK parity.** Python, Java, C#, PHP, and Ruby REST
+    clients gain revoke, identify-by-VK / identify-by-fingerprint,
+    verify-auto, live/ready probes, and admin-bearer support,
+    matching the Go SDK's surface.
+  - **Helm chart 0.2.0** — ServiceAccount (automount disabled),
+    optional Ingress / NetworkPolicy / PodDisruptionBudget, NOTES.txt,
+    and a `helm test` connection hook.
+  - **Docs reconciliation** — `docs/story/15-limitations.md` and the
+    ROADMAP limitation tables now reflect what actually shipped
+    (L1/L3/L4/L13 resolved, L9 partially mitigated, L15 reframed).
 - **Verify-pool worker affinity** (`QV_VERIFY_AFFINITY=true`, default off).
   When enabled, jobs are dispatched by `murmur3_32(keyId) % nWorkers`
   to a fixed worker per key, so a hot key's verifying-key stays warm
