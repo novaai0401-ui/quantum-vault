@@ -27,10 +27,12 @@ public class SigvaultClient : IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _base;
+    private readonly string? _adminToken; // required for keygen/issue/revoke when the server enforces auth
 
-    public SigvaultClient(string baseUrl = "http://localhost:7433")
+    public SigvaultClient(string baseUrl = "http://localhost:7433", string? adminToken = null)
     {
         _base = baseUrl.TrimEnd('/');
+        _adminToken = adminToken;
         _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         _http.DefaultRequestHeaders.Add("Accept", "application/json");
     }
@@ -58,10 +60,16 @@ public class SigvaultClient : IDisposable
 
     public record VerifyResponse(
         [property: JsonPropertyName("valid")]       bool Valid,
+        [property: JsonPropertyName("keyId")]       string? KeyId,  // populated by VerifyAutoAsync
         [property: JsonPropertyName("claims")]      Dictionary<string,string> Claims,
         [property: JsonPropertyName("issuedAt")]    string IssuedAt,
         [property: JsonPropertyName("ttlSecs")]     int TtlSecs,
         [property: JsonPropertyName("mutationCtr")] long MutationCtr);
+
+    public record IdentifyResponse(
+        [property: JsonPropertyName("keyId")]       string KeyId,
+        [property: JsonPropertyName("fingerprint")] string Fingerprint,
+        [property: JsonPropertyName("revoked")]     bool Revoked);
 
     // ── API ───────────────────────────────────────────────────────────────────
 
@@ -73,12 +81,55 @@ public class SigvaultClient : IDisposable
                ?? throw new Exception("null response");
     }
 
-    /// <summary>Generate a new ML-DSA-87 keypair. Returns keyId.</summary>
+    /// <summary>Kubernetes-style liveness probe (GET /v3/live).</summary>
+    public async Task LiveAsync()
+    {
+        var resp = await _http.GetAsync($"{_base}/v3/live");
+        resp.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>Kubernetes-style readiness probe (GET /v3/ready).</summary>
+    public async Task ReadyAsync()
+    {
+        var resp = await _http.GetAsync($"{_base}/v3/ready");
+        resp.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>Generate a new ML-DSA-87 keypair (admin). Returns keyId.</summary>
     public async Task<string> KeygenAsync(string? label = null)
     {
         var body = new Dictionary<string,object?> { ["label"] = label };
-        var resp = await PostAsync<KeygenResponse>("/v3/keygen", body);
+        var resp = await PostAsync<KeygenResponse>("/v3/keygen", body, admin: true);
         return resp.KeyId;
+    }
+
+    /// <summary>
+    /// Resolve a keyId in O(1) from a verifying-key (base64url).
+    /// Operationally closes limitation L2.
+    /// </summary>
+    public async Task<IdentifyResponse> IdentifyByVkAsync(string vkB64u)
+    {
+        var body = new Dictionary<string,object?> { ["vkB64u"] = vkB64u };
+        return await PostAsync<IdentifyResponse>("/v3/keys/identify", body);
+    }
+
+    /// <summary>Resolve a keyId from a 32-hex SHA3-256 verifying-key fingerprint.</summary>
+    public async Task<IdentifyResponse> IdentifyByFingerprintAsync(string fingerprint)
+    {
+        var body = new Dictionary<string,object?> { ["fingerprint"] = fingerprint };
+        return await PostAsync<IdentifyResponse>("/v3/keys/identify", body);
+    }
+
+    /// <summary>Revoke a key (admin). Durable on disk before the server responds.</summary>
+    public async Task RevokeAsync(string keyId)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Delete, $"{_base}/v3/keys/{Uri.EscapeDataString(keyId)}");
+        if (_adminToken is not null)
+            req.Headers.Add("Authorization", "Bearer " + _adminToken);
+        var resp = await _http.SendAsync(req);
+        var raw  = await resp.Content.ReadAsStringAsync();
+        if (!resp.IsSuccessStatusCode)
+            throw new HttpRequestException($"Sigvault error {(int)resp.StatusCode}: {raw}");
     }
 
     /// <summary>Issue a signed post-quantum token. Returns hex token string.</summary>
@@ -95,7 +146,7 @@ public class SigvaultClient : IDisposable
             ["suite"]     = suite,
             ["tokenType"] = tokenType,
         };
-        var resp = await PostAsync<IssueResponse>("/v3/token/issue", body);
+        var resp = await PostAsync<IssueResponse>("/v3/token/issue", body, admin: true);
         return resp.TokenHex;
     }
 
@@ -108,6 +159,18 @@ public class SigvaultClient : IDisposable
         return resp;
     }
 
+    /// <summary>
+    /// Verify without knowing the keyId — the server trial-verifies against
+    /// every active (non-revoked) key. Response includes KeyId for caching.
+    /// </summary>
+    public async Task<VerifyResponse> VerifyAutoAsync(string token)
+    {
+        var body = new Dictionary<string,object?> { ["token"] = token };
+        var resp = await PostAsync<VerifyResponse>("/v3/token/verify-auto", body);
+        if (!resp.Valid) throw new InvalidOperationException("No active key verified the token");
+        return resp;
+    }
+
     /// <summary>Inspect token header without cryptographic verification.</summary>
     public async Task<Dictionary<string,object?>> InspectAsync(string token)
     {
@@ -117,11 +180,16 @@ public class SigvaultClient : IDisposable
 
     // ── Internal ──────────────────────────────────────────────────────────────
 
-    private async Task<T> PostAsync<T>(string path, object body)
+    private async Task<T> PostAsync<T>(string path, object body, bool admin = false)
     {
-        var content = JsonContent.Create(body);
-        var resp    = await _http.PostAsync(_base + path, content);
-        var raw     = await resp.Content.ReadAsStringAsync();
+        using var req = new HttpRequestMessage(HttpMethod.Post, _base + path)
+        {
+            Content = JsonContent.Create(body),
+        };
+        if (admin && _adminToken is not null)
+            req.Headers.Add("Authorization", "Bearer " + _adminToken);
+        var resp = await _http.SendAsync(req);
+        var raw  = await resp.Content.ReadAsStringAsync();
         if (!resp.IsSuccessStatusCode)
             throw new HttpRequestException($"Sigvault error {(int)resp.StatusCode}: {raw}");
         return JsonSerializer.Deserialize<T>(raw)

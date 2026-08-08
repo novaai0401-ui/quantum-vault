@@ -25,29 +25,56 @@ module Sigvault
   end
 
   class Client
-    def initialize(base_url = "http://localhost:7433", timeout: 30)
-      @uri     = URI.parse(base_url)
-      @timeout = timeout
+    def initialize(base_url = "http://localhost:7433", timeout: 30, admin_token: nil)
+      @uri         = URI.parse(base_url)
+      @timeout     = timeout
+      @admin_token = admin_token   # required for keygen/issue/revoke when the server enforces auth
     end
 
     def health       = get("/v3/health")
+    def live         = get("/v3/live")
+    def ready        = get("/v3/ready")
     def spec         = get("/v3/spec")
 
     def keygen(label = nil)
       body = label ? { label: label } : {}
-      post("/v3/keygen", body)[:keyId]
+      post("/v3/keygen", body, admin: true)[:keyId]
+    end
+
+    # Resolve a keyId in O(1) from a verifying-key (base64url).
+    # Operationally closes limitation L2. Returns {keyId:, fingerprint:, revoked:}.
+    def identify_by_vk(vk_b64u)
+      post("/v3/keys/identify", { vkB64u: vk_b64u })
+    end
+
+    # Resolve a keyId from a 32-hex SHA3-256 verifying-key fingerprint.
+    def identify_by_fingerprint(fingerprint)
+      post("/v3/keys/identify", { fingerprint: fingerprint })
+    end
+
+    # Revoke a key (admin). Durable on disk before the server responds.
+    def revoke(key_id)
+      delete("/v3/keys/#{key_id}", admin: true)
     end
 
     def issue(key_id, claims, ttl: 3600, suite: "dilithium5", token_type: "access")
       resp = post("/v3/token/issue", {
         keyId: key_id, claims: claims.transform_keys(&:to_s),
         ttl: ttl, suite: suite, tokenType: token_type
-      })
+      }, admin: true)
       resp[:tokenHex]
     end
 
     def verify(key_id, token)
       resp = post("/v3/token/verify", { keyId: key_id, token: token })
+      raise Error.new(resp.dig(:error, :code), resp.dig(:error, :message)) unless resp[:valid]
+      resp
+    end
+
+    # Verify without knowing the keyId — the server trial-verifies against
+    # every active (non-revoked) key. Response includes :keyId for caching.
+    def verify_auto(token)
+      resp = post("/v3/token/verify-auto", { token: token })
       raise Error.new(resp.dig(:error, :code), resp.dig(:error, :message)) unless resp[:valid]
       resp
     end
@@ -58,14 +85,21 @@ module Sigvault
 
     private
 
-    def post(path, body)
+    def post(path, body, admin: false)
       req = Net::HTTP::Post.new(path, "Content-Type" => "application/json")
+      req["Authorization"] = "Bearer #{@admin_token}" if admin && @admin_token
       req.body = body.to_json
       call(req)
     end
 
     def get(path)
       call(Net::HTTP::Get.new(path))
+    end
+
+    def delete(path, admin: false)
+      req = Net::HTTP::Delete.new(path)
+      req["Authorization"] = "Bearer #{@admin_token}" if admin && @admin_token
+      call(req)
     end
 
     def call(req)

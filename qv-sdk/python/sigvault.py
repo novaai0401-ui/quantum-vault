@@ -29,9 +29,11 @@ class SigvaultError(Exception):
 class SigvaultClient:
     """Thread-safe HTTP client for the Sigvault REST API."""
 
-    def __init__(self, base_url: str = "http://localhost:7433", timeout: int = 30):
+    def __init__(self, base_url: str = "http://localhost:7433", timeout: int = 30,
+                 admin_token: Optional[str] = None):
         self.base  = base_url.rstrip("/")
         self.timeout = timeout
+        self.admin_token = admin_token   # required for keygen/issue/revoke when the server enforces auth
         self._session = requests.Session()
         self._session.headers.update({
             "Content-Type": "application/json",
@@ -40,8 +42,13 @@ class SigvaultClient:
 
     # ── Low-level ─────────────────────────────────────────────────────────────
 
-    def _post(self, path: str, body: Dict) -> Dict:
-        resp = self._session.post(f"{self.base}{path}", json=body, timeout=self.timeout)
+    def _admin_headers(self) -> Dict:
+        return {"Authorization": f"Bearer {self.admin_token}"} if self.admin_token else {}
+
+    def _post(self, path: str, body: Dict, admin: bool = False) -> Dict:
+        headers = self._admin_headers() if admin else {}
+        resp = self._session.post(f"{self.base}{path}", json=body, timeout=self.timeout,
+                                  headers=headers)
         data = resp.json()
         if not resp.ok:
             err = data.get("error", {})
@@ -53,11 +60,28 @@ class SigvaultClient:
         resp.raise_for_status()
         return resp.json()
 
+    def _delete(self, path: str, admin: bool = False) -> Dict:
+        headers = self._admin_headers() if admin else {}
+        resp = self._session.delete(f"{self.base}{path}", timeout=self.timeout, headers=headers)
+        data = resp.json()
+        if not resp.ok:
+            err = data.get("error", {})
+            raise SigvaultError(err.get("code", "UNKNOWN"), err.get("message", str(resp.status_code)))
+        return data
+
     # ── API ───────────────────────────────────────────────────────────────────
 
     def health(self) -> Dict:
         """Check server liveness."""
         return self._get("/v3/health")
+
+    def live(self) -> Dict:
+        """Kubernetes-style liveness probe (GET /v3/live)."""
+        return self._get("/v3/live")
+
+    def ready(self) -> Dict:
+        """Kubernetes-style readiness probe (GET /v3/ready)."""
+        return self._get("/v3/ready")
 
     def spec(self) -> Dict:
         """Get algorithm and wire-format specification."""
@@ -79,7 +103,30 @@ class SigvaultClient:
         body = {}
         if label:
             body["label"] = label
-        return self._post("/v3/keygen", body)
+        return self._post("/v3/keygen", body, admin=True)
+
+    def identify_by_vk(self, vk_b64u: str) -> Dict:
+        """
+        Resolve a keyId in O(1) from a verifying-key (base64url).
+
+        Operationally closes limitation L2 — a caller that holds a token but
+        not the keyId can call this once and cache the result.
+
+        Returns:
+            {keyId: str, fingerprint: str, revoked: bool}
+        """
+        return self._post("/v3/keys/identify", {"vkB64u": vk_b64u})
+
+    def identify_by_fingerprint(self, fingerprint: str) -> Dict:
+        """Resolve a keyId from a 32-hex SHA3-256 verifying-key fingerprint."""
+        return self._post("/v3/keys/identify", {"fingerprint": fingerprint})
+
+    def revoke(self, key_id: str) -> Dict:
+        """
+        Revoke a key (admin). The revocation is durable on disk before the
+        server responds.
+        """
+        return self._delete(f"/v3/keys/{key_id}", admin=True)
 
     def issue(
         self,
@@ -115,7 +162,7 @@ class SigvaultClient:
             "ttl":       ttl,
             "suite":     suite,
             "tokenType": token_type,
-        })
+        }, admin=True)
 
     def verify(self, key_id: str, token: str) -> Dict:
         """
@@ -138,6 +185,16 @@ class SigvaultClient:
             SigvaultError if the token is invalid, expired, or tampered.
         """
         return self._post("/v3/token/verify", {"keyId": key_id, "token": token})
+
+    def verify_auto(self, token: str) -> Dict:
+        """
+        Verify a token without knowing the keyId. The server trial-verifies
+        against every active (non-revoked) key — O(N) over keys.
+
+        Returns the same shape as verify() plus a `keyId` field so callers
+        can cache it for subsequent verify() calls.
+        """
+        return self._post("/v3/token/verify-auto", {"token": token})
 
     def inspect(self, token: str) -> Dict:
         """

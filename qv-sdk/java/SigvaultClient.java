@@ -23,6 +23,7 @@ public class SigvaultClient {
 
     private final String baseUrl;
     private final HttpClient http;
+    private String adminToken; // required for keygen/issue/revoke when the server enforces auth
 
     public SigvaultClient(String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length()-1) : baseUrl;
@@ -30,6 +31,12 @@ public class SigvaultClient {
             .connectTimeout(Duration.ofSeconds(10))
             .version(HttpClient.Version.HTTP_1_1)
             .build();
+    }
+
+    /** Attach the admin bearer token used by admin-only endpoints. Returns this for chaining. */
+    public SigvaultClient withAdminToken(String token) {
+        this.adminToken = token;
+        return this;
     }
 
     // ── JSON helpers (no Jackson/Gson needed for simple cases) ────────────────
@@ -52,15 +59,27 @@ public class SigvaultClient {
     }
 
     private Map<String,Object> post(String path, Map<String,Object> body) throws Exception {
+        return post(path, body, false);
+    }
+
+    private Map<String,Object> post(String path, Map<String,Object> body, boolean admin) throws Exception {
         String json = toJson(body);
-        HttpRequest req = HttpRequest.newBuilder()
+        HttpRequest.Builder b = HttpRequest.newBuilder()
             .uri(URI.create(baseUrl + path))
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(json))
-            .timeout(Duration.ofSeconds(30))
-            .build();
+            .timeout(Duration.ofSeconds(30));
+        if (admin && adminToken != null) b.header("Authorization", "Bearer " + adminToken);
+        HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+        return parseJson(resp.body());
+    }
 
-        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+    private Map<String,Object> delete(String path, boolean admin) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder()
+            .uri(URI.create(baseUrl + path))
+            .DELETE().timeout(Duration.ofSeconds(30));
+        if (admin && adminToken != null) b.header("Authorization", "Bearer " + adminToken);
+        HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
         return parseJson(resp.body());
     }
 
@@ -86,12 +105,44 @@ public class SigvaultClient {
         return get("/v3/health");
     }
 
-    /** Generate a new ML-DSA-87 keypair. Returns the keyId. */
+    /** Kubernetes-style liveness probe (GET /v3/live). */
+    public Map<String,Object> live() throws Exception {
+        return get("/v3/live");
+    }
+
+    /** Kubernetes-style readiness probe (GET /v3/ready). */
+    public Map<String,Object> ready() throws Exception {
+        return get("/v3/ready");
+    }
+
+    /** Generate a new ML-DSA-87 keypair (admin). Returns the keyId. */
     public String keygen(String label) throws Exception {
         Map<String,Object> body = new LinkedHashMap<>();
         if (label != null) body.put("label", label);
-        Map<String,Object> resp = post("/v3/keygen", body);
+        Map<String,Object> resp = post("/v3/keygen", body, true);
         return (String) resp.get("keyId");
+    }
+
+    /**
+     * Resolve a keyId in O(1) from a verifying-key (base64url).
+     * Operationally closes limitation L2. Returns {keyId, fingerprint, revoked}.
+     */
+    public Map<String,Object> identifyByVk(String vkB64u) throws Exception {
+        Map<String,Object> body = new LinkedHashMap<>();
+        body.put("vkB64u", vkB64u);
+        return post("/v3/keys/identify", body);
+    }
+
+    /** Resolve a keyId from a 32-hex SHA3-256 verifying-key fingerprint. */
+    public Map<String,Object> identifyByFingerprint(String fingerprint) throws Exception {
+        Map<String,Object> body = new LinkedHashMap<>();
+        body.put("fingerprint", fingerprint);
+        return post("/v3/keys/identify", body);
+    }
+
+    /** Revoke a key (admin). Durable on disk before the server responds. */
+    public Map<String,Object> revoke(String keyId) throws Exception {
+        return delete("/v3/keys/" + keyId, true);
     }
 
     /** Issue a signed token. Returns the hex-encoded token. */
@@ -107,7 +158,7 @@ public class SigvaultClient {
         body.put("ttl",       ttl);
         body.put("suite",     suite);
         body.put("tokenType", tokenType);
-        Map<String,Object> resp = post("/v3/token/issue", body);
+        Map<String,Object> resp = post("/v3/token/issue", body, true);
         return (String) resp.get("tokenHex");
     }
 
@@ -117,6 +168,22 @@ public class SigvaultClient {
         body.put("keyId", keyId);
         body.put("token", token);
         Map<String,Object> resp = post("/v3/token/verify", body);
+        Boolean valid = (Boolean) resp.get("valid");
+        if (Boolean.FALSE.equals(valid)) {
+            Object err = resp.get("error");
+            throw new RuntimeException("Token invalid: " + err);
+        }
+        return resp;
+    }
+
+    /**
+     * Verify without knowing the keyId — the server trial-verifies against
+     * every active (non-revoked) key. Response includes keyId for caching.
+     */
+    public Map<String,Object> verifyAuto(String token) throws Exception {
+        Map<String,Object> body = new LinkedHashMap<>();
+        body.put("token", token);
+        Map<String,Object> resp = post("/v3/token/verify-auto", body);
         Boolean valid = (Boolean) resp.get("valid");
         if (Boolean.FALSE.equals(valid)) {
             Object err = resp.get("error");

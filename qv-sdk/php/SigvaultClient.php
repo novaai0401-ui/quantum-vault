@@ -19,23 +19,33 @@ class SigvaultClient
 {
     private string $base;
     private int    $timeout;
+    private string $adminToken;   // required for keygen/issue/revoke when the server enforces auth
 
-    public function __construct(string $baseUrl = 'http://localhost:7433', int $timeout = 30)
+    public function __construct(string $baseUrl = 'http://localhost:7433', int $timeout = 30,
+                                string $adminToken = '')
     {
-        $this->base    = rtrim($baseUrl, '/');
-        $this->timeout = $timeout;
+        $this->base       = rtrim($baseUrl, '/');
+        $this->timeout    = $timeout;
+        $this->adminToken = $adminToken;
     }
 
-    private function post(string $path, array $body): array
+    private function request(string $method, string $path, ?array $body, bool $admin): array
     {
+        $headers = ['Content-Type: application/json', 'Accept: application/json'];
+        if ($admin && $this->adminToken !== '') {
+            $headers[] = 'Authorization: Bearer ' . $this->adminToken;
+        }
         $ch = curl_init($this->base . $path);
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($body),
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+        $opts = [
+            CURLOPT_CUSTOMREQUEST  => $method,
+            CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => $this->timeout,
-        ]);
+        ];
+        if ($body !== null) {
+            $opts[CURLOPT_POSTFIELDS] = json_encode($body);
+        }
+        curl_setopt_array($ch, $opts);
         $resp  = curl_exec($ch);
         $code  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
@@ -48,6 +58,11 @@ class SigvaultClient
         return $data;
     }
 
+    private function post(string $path, array $body, bool $admin = false): array
+    {
+        return $this->request('POST', $path, $body, $admin);
+    }
+
     private function get(string $path): array
     {
         $ch = curl_init($this->base . $path);
@@ -58,11 +73,34 @@ class SigvaultClient
     }
 
     public function health(): array { return $this->get('/v3/health'); }
+    public function live():   array { return $this->get('/v3/live'); }
+    public function ready():  array { return $this->get('/v3/ready'); }
 
     public function keygen(string $label = ''): string
     {
         $body = $label ? ['label' => $label] : [];
-        return $this->post('/v3/keygen', $body)['keyId'];
+        return $this->post('/v3/keygen', $body, true)['keyId'];
+    }
+
+    /**
+     * Resolve a keyId in O(1) from a verifying-key (base64url).
+     * Operationally closes limitation L2. Returns [keyId, fingerprint, revoked].
+     */
+    public function identifyByVk(string $vkB64u): array
+    {
+        return $this->post('/v3/keys/identify', ['vkB64u' => $vkB64u]);
+    }
+
+    /** Resolve a keyId from a 32-hex SHA3-256 verifying-key fingerprint. */
+    public function identifyByFingerprint(string $fingerprint): array
+    {
+        return $this->post('/v3/keys/identify', ['fingerprint' => $fingerprint]);
+    }
+
+    /** Revoke a key (admin). Durable on disk before the server responds. */
+    public function revoke(string $keyId): array
+    {
+        return $this->request('DELETE', '/v3/keys/' . rawurlencode($keyId), null, true);
     }
 
     public function issue(string $keyId, array $claims, int $ttl = 3600,
@@ -74,12 +112,25 @@ class SigvaultClient
             'ttl'       => $ttl,
             'suite'     => $suite,
             'tokenType' => $tokenType,
-        ])['tokenHex'];
+        ], true)['tokenHex'];
     }
 
     public function verify(string $keyId, string $token): array
     {
         $resp = $this->post('/v3/token/verify', ['keyId' => $keyId, 'token' => $token]);
+        if (!($resp['valid'] ?? false)) {
+            throw new RuntimeException('Token invalid: ' . json_encode($resp['error'] ?? '?'));
+        }
+        return $resp;
+    }
+
+    /**
+     * Verify without knowing the keyId — the server trial-verifies against
+     * every active (non-revoked) key. Response includes keyId for caching.
+     */
+    public function verifyAuto(string $token): array
+    {
+        $resp = $this->post('/v3/token/verify-auto', ['token' => $token]);
         if (!($resp['valid'] ?? false)) {
             throw new RuntimeException('Token invalid: ' . json_encode($resp['error'] ?? '?'));
         }
