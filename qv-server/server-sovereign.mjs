@@ -954,6 +954,34 @@ route('GET', '/v3/keys', publicRL((_req, res) => {
   json(res, 200, { keys: list, count: list.length });
 }));
 
+// Stable discovery document, analogous to /.well-known/jwks.json. NOT
+// RFC 7517 JWKS — ML-DSA-87 has no final standard JWK mapping yet
+// (draft-ietf-cose-dilithium), so this ships a proprietary-but-stable
+// shape instead of a fake "kty". Lists active (non-revoked) keys only;
+// revoked keys are discoverable via /v3/revoked. Verifiers can poll this
+// to build a local fingerprint→VK cache and verify offline.
+route('GET', '/.well-known/sigvault-keys.json', publicRL((_req, res) => {
+  const keys = [];
+  for (const [keyId, v] of keystore.entries()) {
+    if (revoked.has(keyId)) continue;
+    keys.push({
+      keyId,
+      fingerprint: fingerprintVk(v.verifyingKey),
+      vkB64u:      b64ue(v.verifyingKey),
+      algorithm:   'ML-DSA-87',
+      suite:       'dilithium5',
+      createdAt:   v.createdAt,
+    });
+  }
+  const payload = JSON.stringify({ keys, count: keys.length });
+  res.writeHead(200, {
+    'content-type':   'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(payload),
+    'cache-control':  'public, max-age=300',
+  });
+  res.end(payload);
+}));
+
 route('GET', /^\/v3\/keys\/([^/]+)$/, publicRL((_req, res, m) => {
   const keyId = decodeURIComponent(m[1]);
   const v = keystore.get(keyId);

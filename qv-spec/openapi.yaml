@@ -463,6 +463,37 @@ paths:
                   revoked: { type: array, items: { type: string, format: uuid } }
                   count:   { type: integer }
 
+  /.well-known/sigvault-keys.json:
+    get:
+      tags: [keys]
+      summary: Key discovery document (JWKS-equivalent, proprietary shape)
+      description: >
+        Lists every active (non-revoked) key with its fingerprint and
+        base64url verifying key so verifiers can build a local
+        fingerprint→VK cache and verify offline. Not RFC 7517 JWKS —
+        ML-DSA-87 has no final standard JWK mapping yet. Served with
+        cache-control max-age=300.
+      responses:
+        '200':
+          description: discovery document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        keyId:       { type: string, format: uuid }
+                        fingerprint: { type: string, description: 32-hex SHA3-256[:16] of the VK }
+                        vkB64u:      { type: string, description: base64url ML-DSA-87 verifying key }
+                        algorithm:   { type: string, enum: [ML-DSA-87] }
+                        suite:       { type: string, enum: [dilithium5] }
+                        createdAt:   { type: integer, description: unix ms }
+                  count: { type: integer }
+
   /v3/metrics:
     get:
       tags: [ops]
