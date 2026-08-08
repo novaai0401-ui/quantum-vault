@@ -78,12 +78,43 @@ secret:
     # QV_ADMIN_TOKEN_SHA256: <hex>
     # QV_MASTER_KEY_HEX:     <hex>
 
-# Network policy / mesh / ingress are deliberately NOT shipped here —
-# they're operator-owned and depend on your cluster's stack
-# (Cilium / Calico / Linkerd / Istio / Cloudflare Tunnel). Wire your
-# own; expose only the qv-server Service to the trusted side.
+# Dedicated ServiceAccount (API token automount disabled — qv-server
+# never talks to the Kubernetes API).
+serviceAccount:
+  create: true
+  name: ""            # "" = derive from the release fullname
+  annotations: {}
+
+# Ingress and NetworkPolicy ship disabled — they depend on your
+# cluster's stack (Cilium / Calico / Linkerd / Istio / Cloudflare
+# Tunnel). Enable the flags below for a basic setup, or wire your own;
+# expose only the qv-server Service to the trusted side.
 ingress:
   enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  # - host: qv.example.com
+  #   paths:
+  #     - path: /
+  #       pathType: Prefix
+  tls: []
+  # - hosts: [qv.example.com]
+  #   secretName: qv-tls
+
+# Default policy when enabled: ingress on 7433 only, egress DNS only.
+# Open Postgres / OTLP egress via extraEgress when those backends are on.
+networkPolicy:
+  enabled: false
+  ingressFrom: []     # [] = allow from anywhere; restrict with peer selectors
+  extraEgress: []
+  # - ports: [{port: 5432, protocol: TCP}]
+
+# PodDisruptionBudget. Only meaningful once replicaCount > 1 (which
+# requires the Postgres ChainStore — see replicaCount note above).
+pdb:
+  enabled: false
+  minAvailable: 1
 
 # CIDR allowlist for admin endpoints. Empty = allowlist disabled.
 adminAllowCidrs: ""

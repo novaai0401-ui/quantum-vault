@@ -1,0 +1,36 @@
+quantum-vault {{ .Chart.AppVersion }} deployed as {{ include "qv.fullname" . }}.
+
+1. Reach the server (ClusterIP by default):
+
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "qv.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+2. Check health:
+
+   curl http://localhost:{{ .Values.service.port }}/v3/health
+
+3. Generate your first key (admin bearer required — the plaintext token
+   whose sha256 you stored as QV_ADMIN_TOKEN_SHA256 in the Secret
+   "{{ include "qv.secretName" . }}"):
+
+   curl -X POST http://localhost:{{ .Values.service.port }}/v3/keygen \
+     -H "Authorization: Bearer $QV_ADMIN_TOKEN" \
+     -H "Content-Type: application/json" -d '{"label":"first-key"}'
+
+4. Run the chart's smoke test:
+
+   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence.enabled=false — every signing key will be LOST on
+pod restart. Never run this way in production.
+{{- end }}
+{{- if gt (int .Values.replicaCount) 1 }}
+
+WARNING: replicaCount > 1 with the file ChainStore breaks single-writer
+replay protection. Set QV_CHAIN_STORE=postgres (see qv-ops/sql/) before
+scaling horizontally.
+{{- end }}
+
+TLS is not terminated by qv-server (by design) — front it with your
+ingress controller or mesh. Set ingress.enabled=true for a basic Ingress.

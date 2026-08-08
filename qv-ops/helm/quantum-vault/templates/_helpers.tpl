@@ -35,6 +35,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 
+{{- define "qv.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+{{ default (include "qv.fullname" .) .Values.serviceAccount.name }}
+{{- else -}}
+{{ default "default" .Values.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
 {{- define "qv.secretName" -}}
 {{- if .Values.secret.create -}}
 {{ include "qv.fullname" . }}-env

@@ -19,6 +19,7 @@ spec:
     metadata:
       labels: {{- include "qv.selectorLabels" . | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "qv.serviceAccountName" . }}
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ div .Values.shutdownTimeoutMs 1000 | int }}
       containers:
