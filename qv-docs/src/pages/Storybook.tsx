@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Link } from 'react-router-dom';
 import { TkxButton, TkxCard, TkxCardBody, TkxBadge } from 'tekivex-ui';
+import { Seo, breadcrumbs } from '../lib/seo';
 import { chapters, PARTS } from '../storybook/chapters';
 
 export default function Storybook() {
   return (
     <div className="page">
+      <Seo jsonLd={[breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Storybook', path: '/storybook' }])]} />
       <div className="container">
         <div className="section-eyebrow">Storybook</div>
         <h1>The reasoning behind every line of code.</h1>

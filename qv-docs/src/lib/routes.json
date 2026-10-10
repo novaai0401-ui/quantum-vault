@@ -1,0 +1,73 @@
+{
+  "siteName": "Sigvault",
+  "defaultSiteUrl": "https://sigvault.tekivex.com",
+  "defaultDescription": "Sigvault is a self-hosted post-quantum token issuer and verifier. ML-DSA-87 (FIPS 204) and Falcon signatures, encrypted claims, structural replay protection, and a server with zero npm dependencies.",
+  "routes": [
+    {
+      "path": "/",
+      "priority": 1.0,
+      "title": "Sigvault — post-quantum tokens you can run yourself",
+      "description": "Sigvault is a self-hosted post-quantum token issuer and verifier. ML-DSA-87 (FIPS 204) and Falcon signatures, encrypted claims, structural replay protection, and a server with zero npm dependencies."
+    },
+    {
+      "path": "/quickstart",
+      "priority": 0.9,
+      "title": "Quickstart — issue and verify a post-quantum token in 60 seconds",
+      "description": "Install @sigvault/sdk, sigvault (Python), or qv-core (Rust), generate a key triplet, and verify your first ML-DSA-87 or Falcon-signed token."
+    },
+    {
+      "path": "/demo",
+      "priority": 0.9,
+      "title": "Live demo — sign a post-quantum token in your browser",
+      "description": "Generate ML-DSA-87 keys, issue an encrypted token, verify it, then tamper with one byte and watch verification fail. Runs entirely in your browser."
+    },
+    {
+      "path": "/migration",
+      "priority": 0.9,
+      "title": "Post-quantum migration timeline — NIST, CNSA 2.0, EU, and what to do now",
+      "description": "The dates that matter: NIST IR 8547 deprecates RSA and ECDSA in 2030 and disallows them in 2035. CNSA 2.0, EU and UK roadmaps. How token signing fits in."
+    },
+    {
+      "path": "/ai-threats",
+      "priority": 0.9,
+      "title": "AI-era threat model — why structure beats detection",
+      "description": "AI makes replay, credential stuffing, dependency poisoning and token forgery cheap and parallel. Eight attacks and the structural control in Sigvault that closes each one, with links to the code."
+    },
+    {
+      "path": "/concepts",
+      "priority": 0.8,
+      "title": "How Sigvault works — key triplet, suites, mutation chain",
+      "description": "The five ideas behind Sigvault: the key triplet, post-quantum signature suites, AEAD-sealed claims, the mutation chain, and stateless verification."
+    },
+    {
+      "path": "/architecture",
+      "priority": 0.8,
+      "title": "Architecture — one process, one wire format, any backend",
+      "description": "How the Sigvault server, ChainStore backends, SDKs, FFI binaries and WASM bundle fit together and share a single conformance suite."
+    },
+    {
+      "path": "/storybook",
+      "priority": 0.8,
+      "title": "Storybook — 22 chapters on the reasoning behind Sigvault",
+      "description": "Why Sigvault exists, how each layer works, and what was deliberately left out. Twenty-two chapters from the threat model to operations."
+    },
+    {
+      "path": "/about",
+      "priority": 0.5,
+      "title": "About Sigvault — who builds it and how to reach us",
+      "description": "Sigvault is built by independent contributors. Licences, contact, security disclosure, and the principles behind the project."
+    },
+    {
+      "path": "/privacy",
+      "priority": 0.3,
+      "title": "Privacy policy — Sigvault",
+      "description": "What this site collects, what it does not, and how the in-browser demo keeps your keys on your device."
+    },
+    {
+      "path": "/terms",
+      "priority": 0.3,
+      "title": "Terms of use — Sigvault",
+      "description": "Terms for using this website and the open-source Sigvault software it documents."
+    }
+  ]
+}

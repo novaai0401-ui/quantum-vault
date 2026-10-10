@@ -5,6 +5,17 @@ import { TkxBadge } from 'tekivex-ui';
 
 import { chapterBySlug, chapters } from '../storybook/chapters';
 import { renderMarkdown, extractH2 } from '../storybook/md';
+import { Seo, breadcrumbs, techArticle } from '../lib/seo';
+
+/** First prose paragraph of a chapter, for the meta description. */
+function firstParagraph(md: string): string {
+  const para = md
+    .replace(/^#.*$/m, '')
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .find((p) => p && !/^[#`|>]/.test(p));
+  return (para ?? '').replace(/[*_`]/g, '').slice(0, 155);
+}
 
 export default function Chapter() {
   const { slug } = useParams<{ slug: string }>();
@@ -16,9 +27,13 @@ export default function Chapter() {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [slug]);
 
+  const html = useMemo(() => (chapter ? renderMarkdown(chapter.source) : ''), [chapter]);
+  const toc  = useMemo(() => (chapter ? extractH2(chapter.source) : []), [chapter]);
+
   if (!chapter) {
     return (
       <div className="page">
+        <Seo title="Chapter not found — Sigvault" description="No such storybook chapter." noindex />
         <div className="container-narrow">
           <h1>Chapter not found</h1>
           <p className="section-lead">
@@ -29,11 +44,24 @@ export default function Chapter() {
     );
   }
 
-  const html = useMemo(() => renderMarkdown(chapter.source), [chapter.source]);
-  const toc  = useMemo(() => extractH2(chapter.source), [chapter.source]);
-
   return (
     <div className="page chapter-page">
+      <Seo
+        title={`${chapter.title} — Sigvault storybook, chapter ${chapter.num}`}
+        description={firstParagraph(chapter.source)}
+        jsonLd={[
+          breadcrumbs([
+            { name: 'Home', path: '/' },
+            { name: 'Storybook', path: '/storybook' },
+            { name: chapter.title, path: `/storybook/${chapter.slug}` },
+          ]),
+          techArticle({
+            headline: chapter.title,
+            description: firstParagraph(chapter.source),
+            path: `/storybook/${chapter.slug}`,
+          }),
+        ]}
+      />
       <div className="chapter-layout">
         <aside className="chapter-toc">
           <div className="toc-title">In this chapter</div>

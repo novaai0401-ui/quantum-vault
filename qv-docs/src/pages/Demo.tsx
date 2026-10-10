@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Interactive in-browser demo. Issues + verifies a real Sigvault token
-// using @sigvault/sdk@4.3.7. Zero network round-trip; the post-quantum
+// using the published @sigvault/sdk. Zero network round-trip; the post-quantum
 // signing happens locally in the visitor's browser.
 
 import { useState } from 'react';
@@ -9,6 +9,8 @@ import {
   TkxAlert, TkxButton, TkxCard, TkxCardBody, TkxCardHeader,
   TkxBadge, TkxDivider,
 } from 'tekivex-ui';
+import { Seo, breadcrumbs } from '../lib/seo';
+import { VERSION } from '../lib/site';
 
 async function loadSdk() {
   const m = await import('@sigvault/sdk');
@@ -153,12 +155,13 @@ export default function Demo() {
 
   return (
     <div className="page">
+      <Seo jsonLd={[breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Live demo', path: '/demo' }])]} />
       <div className="container">
         <div className="section-eyebrow">Interactive demo</div>
         <h1>Issue and verify a post-quantum token, right here.</h1>
         <p className="section-lead">
           Everything below runs in your browser using{' '}
-          <code>@sigvault/sdk@4.3.7</code> — the same package any developer
+          <code>@sigvault/sdk@{VERSION}</code> — the same package any developer
           would <code>npm install</code>. No server, no account, no signup.
           The post-quantum signing happens locally.
         </p>

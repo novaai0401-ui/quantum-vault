@@ -1,10 +1,24 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// The site advertises the SDK version everywhere (footer, install tabs,
+// JSON-LD). Read it once from the SDK manifest so a release bump never
+// leaves the website quoting a stale number.
+const sdkPkg = JSON.parse(
+  readFileSync(fileURLToPath(new URL('../qv-sdk/package.json', import.meta.url)), 'utf8'),
+) as { version: string };
+
 // Static-site build: output goes to dist/, consumable by any static host
 // (Render, Netlify, Cloudflare Pages, GitHub Pages, plain nginx).
+// `scripts/postbuild.mjs` then prerenders per-route HTML, sitemap.xml,
+// robots.txt and llms.txt into dist/.
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __QV_VERSION__: JSON.stringify(sdkPkg.version),
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,

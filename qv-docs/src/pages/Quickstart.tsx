@@ -5,6 +5,8 @@ import {
   TkxAlert, TkxButton, TkxCard, TkxCardBody, TkxBadge,
   TkxTabs, TkxTabList, TkxTab, TkxTabPanels, TkxTabPanel,
 } from 'tekivex-ui';
+import { Seo, breadcrumbs } from '../lib/seo';
+import { VERSION } from '../lib/site';
 
 const SDK_SNIPPETS = {
   Node: `import { generateKeypair, MutationChain, issueToken, verifyToken } from '@sigvault/sdk';
@@ -47,6 +49,7 @@ export default function Quickstart() {
 
   return (
     <div className="page">
+      <Seo jsonLd={[breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Quickstart', path: '/quickstart' }])]} />
       <div className="container-narrow">
         <div className="section-eyebrow">Quickstart</div>
         <h1>From zero to a verified token in 60 seconds.</h1>
@@ -69,19 +72,19 @@ export default function Quickstart() {
           builds and a CycloneDX 1.5 SBOM as an OCI attestation.
         </p>
         <pre><code>{`# Optional: verify the image before running.
-cosign verify ghcr.io/novaai0401-ui/qv-server:4.3.7 \\
+cosign verify ghcr.io/novaai0401-ui/qv-server:${VERSION} \\
   --certificate-identity-regexp "^https://github.com/novaai0401-ui/quantum-vault" \\
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Mint an admin token (one-time).
-docker run --rm ghcr.io/novaai0401-ui/qv-server:4.3.7 npm run mint-token
+docker run --rm ghcr.io/novaai0401-ui/qv-server:${VERSION} npm run mint-token
 
 # Run.
 docker run -d --name sigvault -p 7433:7433 \\
   -e QV_ADMIN_TOKEN_SHA256=$ADMIN_TOKEN_SHA256 \\
   -e QV_MASTER_KEY_HEX=$(openssl rand -hex 32) \\
   -v $PWD/qv-data:/data \\
-  ghcr.io/novaai0401-ui/qv-server:4.3.7`}</code></pre>
+  ghcr.io/novaai0401-ui/qv-server:${VERSION}`}</code></pre>
 
         <h2>2. Provision a key</h2>
         <pre><code>{`curl -fsS http://127.0.0.1:7433/v3/keygen \\

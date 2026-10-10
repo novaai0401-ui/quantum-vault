@@ -5,15 +5,31 @@ import {
   TkxButton, TkxCard, TkxCardBody, TkxBadge, TkxTabs,
   TkxTabList, TkxTab, TkxTabPanels, TkxTabPanel, TkxDivider,
 } from 'tekivex-ui';
+import { Seo, faqPage } from '../lib/seo';
+import { VERSION } from '../lib/site';
+import { MILESTONES } from './Migration';
 
 const INSTALL = {
   npm:    `npm install @sigvault/sdk`,
   python: `pip install sigvault`,
   go:     `import "github.com/novaai0401-ui/quantum-vault/qv-sdk/go"`,
   cargo:  `cargo add qv-core`,
-  docker: `docker pull ghcr.io/novaai0401-ui/qv-server:4.3.7`,
+  docker: `docker pull ghcr.io/novaai0401-ui/qv-server:${VERSION}`,
 } as const;
 type InstallKey = keyof typeof INSTALL;
+
+const LANDING_FAQ = [
+  { q: 'What is Sigvault?',
+    a: 'Sigvault is a self-hosted token issuer and verifier that signs tokens with NIST post-quantum algorithms (ML-DSA-87 and Falcon), encrypts the claims, and makes replay structurally impossible through a per-key mutation chain. It replaces the signing layer under JWT-style tokens.' },
+  { q: 'Is Sigvault a replacement for Auth0 or Keycloak?',
+    a: 'No. Sigvault does not do user login. It sits behind your existing identity provider and issues the token your backends verify. It replaces the cryptography, not the login screen.' },
+  { q: 'Why does the server have zero npm dependencies?',
+    a: 'A compromise of any dependency would compromise every token ever issued. The server uses only the Node.js standard library, and CI rejects any commit that adds a runtime dependency.' },
+  { q: 'Can my backend verify tokens without calling the server?',
+    a: 'Yes. Verification is public-key and stateless. SDKs for JavaScript, Python, Go, Rust, C, Java, PHP, C#, Ruby and WebAssembly verify locally against one shared conformance suite.' },
+  { q: 'Is it free?',
+    a: 'Yes. The server is AGPL-3.0, the SDKs are Apache-2.0 and the specification is CC BY 4.0. There is no hosted plan.' },
+];
 
 export default function Landing() {
   const [tab, setTab] = useState<InstallKey>('npm');
@@ -22,11 +38,12 @@ export default function Landing() {
 
   return (
     <>
+      <Seo jsonLd={[faqPage(LANDING_FAQ)]} />
       {/* ────────── Hero ────────── */}
       <section className="hero">
         <div className="container">
           <TkxBadge variant="solid" colorScheme="primary" size="sm" style={{ marginBottom: 24 }}>
-            v4.3 · Production · Quantum-safe
+            v{VERSION} · Production · Quantum-safe
           </TkxBadge>
           <h1>
             Sovereign tokens, <span className="em">post-quantum</span><br/>
@@ -100,6 +117,45 @@ export default function Landing() {
               title="Replay-proof by construction"
               body="Every token carries a per-key MutationChain counter that is cryptographically linked to its predecessors. A replayed token is structurally rejected — no replay cache, no clock-skew window."
             />
+          </div>
+        </div>
+      </section>
+
+      {/* ────────── AI-era attackers ────────── */}
+      <section className="block">
+        <div className="container">
+          <div className="section-eyebrow">The new attacker</div>
+          <h2>The attacker is now a model. Detection cannot keep up.</h2>
+          <p className="section-lead">
+            AI removes the cost of the old attacks: replay, credential
+            stuffing, dependency poisoning, patient social engineering of a
+            maintainer. A defence that relies on noticing loses to an
+            attacker that tries a million variations an hour. Sigvault makes
+            each attack structurally impossible instead.
+          </p>
+          <div className="grid-3" style={{ marginTop: 36 }}>
+            <FeatureCard
+              icon="∅"
+              title="Nothing to poison"
+              body="An empty dependency graph cannot be entered. The server is Node.js stdlib only; the SDK allows three audited packages. CI fails any commit that changes that."
+            />
+            <FeatureCard
+              icon="⛓"
+              title="Nothing to replay"
+              body="Every token is bound to a hash-linked chain counter. Replay is rejected by construction, no matter how many agents try, with no cache to overflow."
+            />
+            <FeatureCard
+              icon="∎"
+              title="Nothing to hide in"
+              body="State is hash-linked and verified on every boot. Releases are cosign-signed with an SBOM. Every request leaves a structured, redacted audit event."
+            />
+          </div>
+          <div className="cta-row">
+            <Link to="/ai-threats">
+              <TkxButton variant="outline" colorScheme="neutral">
+                Eight attacks, eight structural answers →
+              </TkxButton>
+            </Link>
           </div>
         </div>
       </section>
@@ -259,6 +315,52 @@ export default function Landing() {
               ))}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      {/* ────────── Deadline ────────── */}
+      <section className="block">
+        <div className="container">
+          <div className="section-eyebrow">The clock</div>
+          <h2>Every roadmap now has a date on it.</h2>
+          <p className="section-lead">
+            NIST, the NSA, the European Commission and the UK NCSC have all
+            published migration deadlines. They converge on 2035, with the
+            first hard deprecations in 2030. Tokens are the cheapest place
+            to start.
+          </p>
+          <div className="deadline-strip" style={{ marginTop: 32 }}>
+            {MILESTONES.filter((m) => ['Aug 2024', '2030', '2035'].includes(m.when)).map((m) => (
+              <div key={m.when} className="deadline">
+                <div className="deadline-when">{m.when}</div>
+                <div className="deadline-who">{m.who}</div>
+                <p>{m.what}</p>
+              </div>
+            ))}
+          </div>
+          <div className="cta-row">
+            <Link to="/migration">
+              <TkxButton variant="outline" colorScheme="neutral">
+                Full timeline with sources →
+              </TkxButton>
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ────────── FAQ ────────── */}
+      <section className="block">
+        <div className="container-narrow">
+          <div className="section-eyebrow">Questions</div>
+          <h2>The five things people ask first.</h2>
+          <dl className="faq" style={{ marginTop: 28 }}>
+            {LANDING_FAQ.map(({ q, a }) => (
+              <div key={q} className="faq-item">
+                <dt>{q}</dt>
+                <dd>{a}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </section>
 

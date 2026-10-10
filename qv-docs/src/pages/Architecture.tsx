@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Link } from 'react-router-dom';
 import { TkxAlert, TkxButton } from 'tekivex-ui';
+import { Seo, breadcrumbs } from '../lib/seo';
+import { VERSION } from '../lib/site';
 
 export default function Architecture() {
   return (
     <div className="page">
+      <Seo jsonLd={[breadcrumbs([{ name: 'Home', path: '/' }, { name: 'Architecture', path: '/architecture' }])]} />
       <div className="container-narrow">
         <div className="section-eyebrow">Architecture</div>
         <h1>One process, one wire format, every backend you already have.</h1>
@@ -130,7 +133,7 @@ export default function Architecture() {
                   style={{ marginTop: 36 }}>
           The container image is cosign-signed against a GitHub Actions
           OIDC identity and ships with a CycloneDX 1.5 SBOM as an OCI
-          attestation. Run <code>cosign verify ghcr.io/novaai0401-ui/qv-server:4.3.7</code>{' '}
+          attestation. Run <code>cosign verify ghcr.io/novaai0401-ui/qv-server:{VERSION}</code>{' '}
           before deploy.
         </TkxAlert>
 

@@ -2,13 +2,17 @@
 
 ## The story
 
-On October 27, 2024, NIST ratified three post-quantum cryptographic
+On August 13, 2024, NIST published three post-quantum cryptographic
 standards: FIPS 203 (ML-KEM, formerly Kyber), FIPS 204 (ML-DSA,
 formerly Dilithium), and FIPS 205 (SLH-DSA, formerly SPHINCS+). A
-fourth — Falcon, now being standardised as FIPS 206 — followed close
-behind. Three days later the U.S. government's Commercial National
-Security Algorithm Suite 2.0 mandated these algorithms for new
-classified systems by 2027 and full migration by 2033.
+fourth — Falcon, being standardised as FN-DSA under FIPS 206 — is
+following. The U.S. government's Commercial National Security
+Algorithm Suite 2.0 (September 2022) had already set the schedule:
+prefer these algorithms for new national-security systems from 2025,
+use them exclusively for software and firmware signing by 2030, and
+complete the migration everywhere by 2035. NIST IR 8547 (November
+2024) then put the civilian deadline in writing: RSA and ECDSA
+deprecated after 2030, disallowed after 2035.
 
 None of that is speculative. What *is* speculative is the timeline of
 cryptographically-relevant quantum computers. Estimates from serious

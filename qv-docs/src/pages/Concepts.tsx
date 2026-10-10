@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Link } from 'react-router-dom';
 import { TkxAlert, TkxButton } from 'tekivex-ui';
+import { Seo, breadcrumbs } from '../lib/seo';
 
 export default function Concepts() {
   return (
     <div className="page">
+      <Seo jsonLd={[breadcrumbs([{ name: 'Home', path: '/' }, { name: 'How it works', path: '/concepts' }])]} />
       <div className="container-narrow">
         <div className="section-eyebrow">How it works</div>
         <h1>The cryptographic spine of Sigvault.</h1>
